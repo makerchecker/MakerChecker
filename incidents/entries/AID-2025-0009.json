@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/anthropic-project-vend-claudius-shop-loss",
-  "reproducible": false
+  "reproducible": true
 }

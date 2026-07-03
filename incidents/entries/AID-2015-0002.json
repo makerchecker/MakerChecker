@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/michigan-midas-false-unemployment-fraud-2015",
-  "reproducible": false
+  "reproducible": true
 }

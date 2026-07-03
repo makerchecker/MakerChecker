@@ -30,5 +30,5 @@
     }
   ],
   "reproPath": "examples/gitlab-duo-prompt-injection-source-code-exfiltration",
-  "reproducible": false
+  "reproducible": true
 }

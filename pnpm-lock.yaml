@@ -74,6 +74,10 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/obligations: {}
+
+  packages/proof-verifier: {}
+
   packages/sdk:
     devDependencies:
       '@types/node':
@@ -177,6 +181,8 @@ importers:
       vitest:
         specifier: ^3.0.4
         version: 3.2.6(@types/debug@4.1.13)(@types/node@22.20.0)(happy-dom@20.10.6)(jiti@1.21.7)(yaml@2.9.0)
+
+  packages/validation-kit: {}
 
   packages/web:
     dependencies:

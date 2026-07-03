@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/postmark-mcp-backdoor-bcc-email-exfiltration-2025",
-  "reproducible": false
+  "reproducible": true
 }

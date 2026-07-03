@@ -31,5 +31,5 @@
     }
   ],
   "reproPath": "examples/datatalks-club-claude-code-terraform-destroy-production",
-  "reproducible": false
+  "reproducible": true
 }

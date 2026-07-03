@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/dutch-childcare-benefits-scandal-toeslagenaffaire",
-  "reproducible": false
+  "reproducible": true
 }

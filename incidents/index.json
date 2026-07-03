@@ -24,7 +24,7 @@
         "approval_gate",
         "sod_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/shareleak-copilot-studio-prompt-injection-cve-2026-21520",
       "page": "entries/AID-2026-0008.md",
       "sources": [
@@ -59,7 +59,7 @@
         "high_risk_requires_gate",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/datatalks-club-claude-code-terraform-destroy-production",
       "page": "entries/AID-2026-0007.md",
       "sources": [
@@ -90,7 +90,7 @@
         "approval_gate",
         "limit_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/claude-cowork-deleted-family-photos-2026",
       "page": "entries/AID-2026-0006.md",
       "sources": [
@@ -290,7 +290,7 @@
         "approval_gate",
         "sod_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/whatsapp-mcp-tool-poisoning-exfiltration",
       "page": "entries/AID-2025-0015.md",
       "sources": [
@@ -320,7 +320,7 @@
       "controlsThatBlock": [
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/wadsworth-v-walmart-ai-fabricated-citations",
       "page": "entries/AID-2025-0014.md",
       "sources": [
@@ -355,7 +355,7 @@
         "skill_not_granted",
         "sod_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/postmark-mcp-backdoor-bcc-email-exfiltration-2025",
       "page": "entries/AID-2025-0013.md",
       "sources": [
@@ -390,7 +390,7 @@
         "high_risk_requires_gate",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/google-gemini-cli-hallucinated-file-move-destroyed-project",
       "page": "entries/AID-2025-0012.md",
       "sources": [
@@ -424,7 +424,7 @@
       "controlsThatBlock": [
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/gitlab-duo-prompt-injection-source-code-exfiltration",
       "page": "entries/AID-2025-0011.md",
       "sources": [
@@ -455,7 +455,7 @@
         "high_risk_requires_gate",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/claude-code-rm-rf-home-directory-issue-10077",
       "page": "entries/AID-2025-0010.md",
       "sources": [
@@ -486,7 +486,7 @@
         "approval_gate",
         "limit_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/anthropic-project-vend-claudius-shop-loss",
       "page": "entries/AID-2025-0009.md",
       "sources": [
@@ -521,7 +521,7 @@
         "approval_gate",
         "sod_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/amazon-q-developer-vscode-wiper-prompt-injection-2025",
       "page": "entries/AID-2025-0008.md",
       "sources": [
@@ -556,7 +556,7 @@
         "approval_gate",
         "sod_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/aixbt-agent-dashboard-prompt-drain-55-eth-2025",
       "page": "entries/AID-2025-0007.md",
       "sources": [
@@ -782,7 +782,7 @@
         "high_risk_requires_gate",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/tenncare-teds-automated-medicaid-terminations-2024",
       "page": "entries/AID-2024-0004.md",
       "sources": [
@@ -817,7 +817,7 @@
         "sod_violation",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/freysa-ai-agent-tricked-releasing-47k-prize-2024",
       "page": "entries/AID-2024-0003.md",
       "sources": [
@@ -848,7 +848,7 @@
         "approval_gate",
         "sod_violation"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/evicore-the-dial-prior-authorization-algorithm",
       "page": "entries/AID-2024-0002.md",
       "sources": [
@@ -875,7 +875,7 @@
         "approval_gate",
         "high_risk_requires_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/choice-home-warranty-chatbot-3000-ac-payout-2024",
       "page": "entries/AID-2024-0001.md",
       "sources": [
@@ -1113,7 +1113,7 @@
         "limit_violation",
         "high_risk_requires_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/zillow-offers-ibuyer-pricing-algorithm-loss-2021",
       "page": "entries/AID-2021-0002.md",
       "sources": [
@@ -1144,7 +1144,7 @@
         "high_risk_requires_gate",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/dutch-childcare-benefits-scandal-toeslagenaffaire",
       "page": "entries/AID-2021-0001.md",
       "sources": [
@@ -1179,7 +1179,7 @@
         "approval_gate",
         "high_risk_requires_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/robert-williams-detroit-facial-recognition-wrongful-arrest-2020",
       "page": "entries/AID-2020-0001.md",
       "sources": [
@@ -1210,7 +1210,7 @@
         "high_risk_requires_gate",
         "approval_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/michigan-midas-false-unemployment-fraud-2015",
       "page": "entries/AID-2015-0002.md",
       "sources": [
@@ -1339,7 +1339,7 @@
         "limit_violation",
         "high_risk_requires_gate"
       ],
-      "reproducible": false,
+      "reproducible": true,
       "reproPath": "examples/2010-flash-crash-automated-sell-algorithm",
       "page": "entries/AID-2010-0001.md",
       "sources": [

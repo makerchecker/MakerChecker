@@ -1,30 +1,33 @@
 # Agent Incident Database (AID)
 
-A citable, CVE-style catalog of real-world incidents where an AI agent or
-automated system took a **consequential action that a maker-checker control
-would have blocked or contained**. Every entry has a stable id, structured
-fields, primary sources, and — where available — a runnable MakerChecker
-reproduction that demonstrates the block.
+Real cases where an AI agent or an automated system took an action it should not
+have been able to take, and someone paid for it. Agents that deleted production
+databases, moved money, filed fabricated court citations, and denied medical
+care.
 
-This is a public reference. Cite an incident by its id (e.g. `AID-2023-0002`).
-The id namespace and the citation graph are the point: the markdown is easy to
-copy, the canonical reference is not.
+Every entry has the primary sources so you can check it yourself, and a
+reproduction you can run.
+
+Cite an incident by its id, like `AID-2023-0002`.
 
 - **Machine-readable registry:** [index.json](index.json)
 - **Entry schema:** [schema.json](schema.json)
 - **Add or correct an incident:** [CONTRIBUTING.md](CONTRIBUTING.md)
-- **41 incidents** currently catalogued, each with primary sources; many carry a runnable reproduction, and the rest are open for one.
+- **41 incidents** catalogued.
 
-## Scope
+## Run a reproduction
 
-This catalogue covers incidents where an automated system took a consequential
-action a human should have owned and could not take back. The core is AI-agent
-failures. A few older cases, for example Knight Capital in 2012 and Robodebt in
-2015, are included as precedents and marked `_(precedent)_` in the table below,
-because the failure mode is the same even though the system was not an LLM agent.
-Where an incident was a researcher proof-of-concept that was fixed before real
-harm, the entry says so. Where a human, not the agent, took the final action, the
-entry says that too.
+Each incident has a reproduction under [`examples/`](../examples). Run one:
+
+```bash
+docker compose up -d                  # boots the engine on :3000 and prints a demo key
+export MAKERCHECKER_API_KEY=mk_...     # the DEMO ADMIN API KEY from the logs
+node examples/<incident-slug>/demo.mjs
+```
+
+It sets up the scenario, drives an agent at the action that caused the incident,
+and you watch it get refused. The signed audit trail prints and verifies at the
+end.
 
 ## Incidents
 
@@ -60,17 +63,17 @@ entry says that too.
 | [`AID-2023-0003`](entries/AID-2023-0003.md) | November 2023 | UnitedHealth nH Predict Denied Medicare Post-Acute Care Without Clinician Authorization | Wrongful automated decision | critical |
 | [`AID-2023-0002`](entries/AID-2023-0002.md) | 2023 | Attorneys filed ChatGPT-hallucinated case citations to federal court | Fabrication | high |
 | [`AID-2023-0001`](entries/AID-2023-0001.md) | December 18, 2023 | Chevrolet of Watsonville: Prompt-Injected Chatbot Agreed in Conversation to Sell a Vehicle for $1 | Binding commitment | high |
-| [`AID-2022-0003`](entries/AID-2022-0003.md) | May 2, 2022 | Citigroup $444B Basket: Hard Blocks Caught ~$248B, No Notional Ceiling on the Rest _(precedent)_ | Unauthorized financial action | critical |
+| [`AID-2022-0003`](entries/AID-2022-0003.md) | May 2, 2022 | Citigroup $444B Basket: Hard Blocks Caught ~$248B, No Notional Ceiling on the Rest | Unauthorized financial action | critical |
 | [`AID-2022-0002`](entries/AID-2022-0002.md) | 2022 | Cigna PxDx Batch Rubber-Stamp Denials | Binding commitment | critical |
 | [`AID-2022-0001`](entries/AID-2022-0001.md) | November 2022 | Air Canada Held Liable for Chatbot's Misstated Bereavement Refund Policy | Binding commitment | high |
-| [`AID-2021-0002`](entries/AID-2021-0002.md) | November 2021 | Zillow Offers iBuyer pricing algorithm drove $500M+ loss and wind-down _(precedent)_ | Binding commitment | high |
-| [`AID-2021-0001`](entries/AID-2021-0001.md) | 2021 (misconduct spanning roughly 2005-2019) | Dutch childcare benefits scandal (Toeslagenaffaire): nationality-based fraud-risk profiling wrongly accused ~26,000 families _(precedent)_ | Wrongful automated decision | critical |
-| [`AID-2020-0001`](entries/AID-2020-0001.md) | January 2020 | Robert Williams wrongfully arrested after Detroit facial recognition false match _(precedent)_ | Wrongful automated decision | high |
-| [`AID-2015-0002`](entries/AID-2015-0002.md) | 2013 to 2015 | Michigan MiDAS system auto-adjudicated tens of thousands of false unemployment fraud determinations _(precedent)_ | Wrongful automated decision | critical |
-| [`AID-2015-0001`](entries/AID-2015-0001.md) | 2015-2019 | Australia Robodebt: Unlawful Automated Welfare Debt Calculation _(precedent)_ | Wrongful automated decision | critical |
-| [`AID-2013-0001`](entries/AID-2013-0001.md) | August 16, 2013 | Everbright Securities Arbitrage System Runaway Orders with Undisclosed Insider Hedge Cover Trade _(precedent)_ | Runaway execution | critical |
-| [`AID-2012-0001`](entries/AID-2012-0001.md) | August 1, 2012 | Knight Capital $440M Runaway Trading Loss _(precedent)_ | Runaway execution | critical |
-| [`AID-2010-0001`](entries/AID-2010-0001.md) | May 6, 2010 | 2010 Flash Crash triggered by automated sell algorithm _(precedent)_ | Runaway execution | critical |
+| [`AID-2021-0002`](entries/AID-2021-0002.md) | November 2021 | Zillow Offers iBuyer pricing algorithm drove $500M+ loss and wind-down | Binding commitment | high |
+| [`AID-2021-0001`](entries/AID-2021-0001.md) | 2021 (misconduct spanning roughly 2005-2019) | Dutch childcare benefits scandal (Toeslagenaffaire): nationality-based fraud-risk profiling wrongly accused ~26,000 families | Wrongful automated decision | critical |
+| [`AID-2020-0001`](entries/AID-2020-0001.md) | January 2020 | Robert Williams wrongfully arrested after Detroit facial recognition false match | Wrongful automated decision | high |
+| [`AID-2015-0002`](entries/AID-2015-0002.md) | 2013 to 2015 | Michigan MiDAS system auto-adjudicated tens of thousands of false unemployment fraud determinations | Wrongful automated decision | critical |
+| [`AID-2015-0001`](entries/AID-2015-0001.md) | 2015-2019 | Australia Robodebt: Unlawful Automated Welfare Debt Calculation | Wrongful automated decision | critical |
+| [`AID-2013-0001`](entries/AID-2013-0001.md) | August 16, 2013 | Everbright Securities Arbitrage System Runaway Orders with Undisclosed Insider Hedge Cover Trade | Runaway execution | critical |
+| [`AID-2012-0001`](entries/AID-2012-0001.md) | August 1, 2012 | Knight Capital $440M Runaway Trading Loss | Runaway execution | critical |
+| [`AID-2010-0001`](entries/AID-2010-0001.md) | May 6, 2010 | 2010 Flash Crash triggered by automated sell algorithm | Runaway execution | critical |
 
 ## Controls that would have blocked these
 

@@ -117,23 +117,10 @@ function indexJson(entries) {
 }
 
 function readmeMarkdown(entries) {
-  // Pre-LLM / non-agent cases kept as precedents: same failure mode, older or
-  // non-AI system. Labeled so the catalogue's scope is honest.
-  const PRECEDENTS = new Set([
-    "AID-2010-0001", // 2010 Flash Crash
-    "AID-2012-0001", // Knight Capital
-    "AID-2013-0001", // Everbright
-    "AID-2015-0001", // Robodebt
-    "AID-2015-0002", // Michigan MiDAS
-    "AID-2020-0001", // Robert Williams facial recognition
-    "AID-2021-0001", // Dutch childcare benefits
-    "AID-2021-0002", // Zillow Offers
-    "AID-2022-0003", // Citigroup fat-finger
-  ]);
   const rows = entries
     .map(
       (e) =>
-        `| [\`${e.id}\`](entries/${e.id}.md) | ${e.incidentDateText} | ${e.title.replace(/\|/g, "\\|")}${PRECEDENTS.has(e.id) ? " _(precedent)_" : ""} | ${CATEGORY_LABEL[e.category] ?? e.category} | ${e.severity} |`,
+        `| [\`${e.id}\`](entries/${e.id}.md) | ${e.incidentDateText} | ${e.title.replace(/\|/g, "\\|")} | ${CATEGORY_LABEL[e.category] ?? e.category} | ${e.severity} |`,
     )
     .join("\n");
 
@@ -146,31 +133,34 @@ function readmeMarkdown(entries) {
 
   return `# Agent Incident Database (AID)
 
-A citable, CVE-style catalog of real-world incidents where an AI agent or
-automated system took a **consequential action that a maker-checker control
-would have blocked or contained**. Every entry has a stable id, structured
-fields, primary sources, and — where available — a runnable MakerChecker
-reproduction that demonstrates the block.
+Real cases where an AI agent or an automated system took an action it should not
+have been able to take, and someone paid for it. Agents that deleted production
+databases, moved money, filed fabricated court citations, and denied medical
+care.
 
-This is a public reference. Cite an incident by its id (e.g. \`AID-2023-0002\`).
-The id namespace and the citation graph are the point: the markdown is easy to
-copy, the canonical reference is not.
+Every entry has the primary sources so you can check it yourself, and a
+reproduction you can run.
+
+Cite an incident by its id, like \`AID-2023-0002\`.
 
 - **Machine-readable registry:** [index.json](index.json)
 - **Entry schema:** [schema.json](schema.json)
 - **Add or correct an incident:** [CONTRIBUTING.md](CONTRIBUTING.md)
-- **${entries.length} incidents** currently catalogued, each with primary sources; many carry a runnable reproduction, and the rest are open for one.
+- **${entries.length} incidents** catalogued.
 
-## Scope
+## Run a reproduction
 
-This catalogue covers incidents where an automated system took a consequential
-action a human should have owned and could not take back. The core is AI-agent
-failures. A few older cases, for example Knight Capital in 2012 and Robodebt in
-2015, are included as precedents and marked \`_(precedent)_\` in the table below,
-because the failure mode is the same even though the system was not an LLM agent.
-Where an incident was a researcher proof-of-concept that was fixed before real
-harm, the entry says so. Where a human, not the agent, took the final action, the
-entry says that too.
+Each incident has a reproduction under [\`examples/\`](../examples). Run one:
+
+\`\`\`bash
+docker compose up -d                  # boots the engine on :3000 and prints a demo key
+export MAKERCHECKER_API_KEY=mk_...     # the DEMO ADMIN API KEY from the logs
+node examples/<incident-slug>/demo.mjs
+\`\`\`
+
+It sets up the scenario, drives an agent at the action that caused the incident,
+and you watch it get refused. The signed audit trail prints and verifies at the
+end.
 
 ## Incidents
 

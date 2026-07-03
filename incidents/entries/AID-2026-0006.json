@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/claude-cowork-deleted-family-photos-2026",
-  "reproducible": false
+  "reproducible": true
 }
