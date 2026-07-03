@@ -83,7 +83,7 @@ function isDangerous(f) {
  */
 function buildNote(f, gate) {
   const name = f.tool && f.tool.name ? f.tool.name : 'this tool';
-  const action = f.action || 'takes an action that cannot be undone';
+  const action = f.action || 'acts with no human checking it';
   const ref = f.resembles || null;
   const aid = ref && ref.aid ? ref.aid : null;
   const title = ref && ref.title ? ref.title : null;
