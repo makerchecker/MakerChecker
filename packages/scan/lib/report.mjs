@@ -29,8 +29,8 @@ const INCIDENT_DB_URL =
 const WONT_CATCH =
   'mc scan reads tool definitions, not your live runtime. It will not find ' +
   'prompt injection in your data, logic bugs, or a risk in a tool whose shape ' +
-  'it has never seen. It finds the actions your agent CAN take that it cannot ' +
-  'take back — the thing most teams have never actually looked at.';
+  'it has never seen. It finds what your agent can do on its own, the ' +
+  'thing most teams have never actually looked at.';
 
 // ---- ANSI ------------------------------------------------------------------
 const A = {
@@ -94,7 +94,7 @@ function heroPanel(f, style, pad) {
   const border = (s) => style(c, s);
 
   const content = [];
-  content.push(`${f.tool.name} ${f.action || 'takes an action it cannot undo'}`);
+  content.push(f.action || 'runs with no one checking it');
   content.push('');
   if (f.resembles) {
     for (const l of wrapArr(`Resembles ${f.resembles.title}.`, W)) content.push(l);
@@ -108,7 +108,7 @@ function heroPanel(f, style, pad) {
   content.push('');
   content.push(`Seen in: ${f.tool.source || 'unknown source'}`);
 
-  const labelStr = `─ ${sev} `;
+  const labelStr = `─ NO ONE IS CHECKING · ${f.tool.name} `;
   const fill = Math.max(0, W + 2 - labelStr.length);
   const top = '┌' + labelStr + '─'.repeat(fill) + '┐';
   const bot = '└' + '─'.repeat(W + 2) + '┘';
@@ -192,10 +192,10 @@ export function renderTerminal(findings, meta) {
     for (const l of heroPanel(worst, style, pad)) out.push(l);
   } else {
     out.push(
-      pad + style([A.green, A.bold], '✓ Nothing your agent can do that it cannot undo.'),
+      pad + style([A.green, A.bold], '✓ CERTIFIED. Nothing your agent can do runs unchecked.'),
     );
     out.push(
-      pad + style([A.dim], 'Every tool is reversible, ignored, or already behind a gate.'),
+      pad + style([A.dim], 'Every tool is safe on its own, ignored, or already gated.'),
     );
   }
   out.push('');
@@ -233,7 +233,7 @@ export function renderTerminal(findings, meta) {
     style(SEV_ANSI.HIGH, `${c.HIGH} high`),
     style(SEV_ANSI.MEDIUM, `${c.MEDIUM} medium`),
     style([A.green], `${c.GOVERNED} governed`),
-    style([A.dim], `${c.OK} reversible`),
+    style([A.dim], `${c.OK} certified`),
   ].join(style([A.dim], '  ·  '));
   out.push(pad + summary);
   out.push('');
@@ -303,14 +303,14 @@ export function renderMarkdown(findings, meta) {
   const c = meta.counts;
   const out = [];
 
-  out.push("## mc scan — what your agent can do that you can't undo");
+  out.push("## mc scan: what your agent can do on its own");
   out.push('');
   out.push(
     `Scanned \`${meta.target}\`: **${meta.toolCount} tool${meta.toolCount === 1 ? '' : 's'}** across ${meta.sourceCount} source file${meta.sourceCount === 1 ? '' : 's'}, checked against ${meta.corpusSize} real agent incidents.`,
   );
   out.push('');
   out.push(
-    `**${c.CATASTROPHIC} catastrophic · ${c.HIGH} high · ${c.MEDIUM} medium** ungoverned · ${c.GOVERNED} governed · ${c.OK} reversible.`,
+    `**${c.CATASTROPHIC} catastrophic · ${c.HIGH} high · ${c.MEDIUM} medium** ungoverned · ${c.GOVERNED} governed · ${c.OK} certified.`,
   );
   out.push('');
 
@@ -320,7 +320,7 @@ export function renderMarkdown(findings, meta) {
       ? `${worst.resembles.title} (${worst.resembles.aid})`
       : 'a known agent incident';
     out.push(
-      `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'takes an irreversible action'} — resembles ${inc}.`,
+      `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'runs with no one checking it'} — resembles ${inc}.`,
     );
     out.push('');
   }
@@ -338,7 +338,7 @@ export function renderMarkdown(findings, meta) {
     }
     out.push('');
   } else {
-    out.push('No ungoverned irreversible tools found — every tool is reversible or already gated.');
+    out.push('CERTIFIED. Nothing your agent does runs unchecked.');
     out.push('');
   }
 

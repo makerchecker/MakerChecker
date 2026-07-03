@@ -1,10 +1,10 @@
 // Risk signatures for mc scan. Each maps a tool "shape" (the verbs + argument
-// hints a tool exposes) to the class of irreversible action it can take, the real
+// hints a tool exposes) to the class of high-consequence action it can take, the real
 // incident from the Agent Incident Database it resembles, and the control that
 // would have stopped it. This table is the moat: findings are named against 41
 // sourced, reproduced disasters, not generic "misconfiguration" warnings.
 //
-// severity: CATASTROPHIC (irreversible + wide blast radius), HIGH (irreversible),
+// severity: CATASTROPHIC (serious, often unrecoverable harm), HIGH (serious),
 // MEDIUM (consequential but recoverable). A tool with no matching signature is
 // reported as reversible and not flagged.
 //
@@ -57,7 +57,7 @@ export const SIGNATURES = [
       { aid: 'AID-2025-0008', title: 'the Amazon Q Developer VS Code extension that shipped with a data-wiping prompt injection' },
     ],
     control: 'high_risk_requires_gate',
-    why: 'A generic shell/exec tool has unbounded blast radius: it can delete files, exfiltrate secrets, or spend money regardless of what the prompt intended. Arbitrary execution must be gated, sandboxed, and deny-by-default.',
+    why: 'A generic shell/exec tool can do almost anything on its own: delete files, exfiltrate secrets, or spend money regardless of what the prompt intended. Arbitrary execution must be gated, sandboxed, and deny-by-default.',
   },
   {
     id: 'force-rewrite-history',
@@ -224,7 +224,7 @@ export const SIGNATURES = [
     action: 'changes who can access what, expanding privilege',
     resembles: { aid: 'AID-2026-0005', title: 'the Meta AI agent that skipped required human review and whose flawed guidance led to broad data access' },
     control: 'approval_gate',
-    why: 'Granting a role or widening a scope is a privilege change that a human must review; an agent that can hand out access can quietly expand its own blast radius. It needs an approval gate and segregation of duties.',
+    why: 'Granting a role or widening a scope is a privilege change that a human must review; an agent that can hand out access can quietly expand its own reach. It needs an approval gate and segregation of duties.',
   },
   {
     id: 'file-external',

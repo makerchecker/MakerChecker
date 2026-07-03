@@ -2,7 +2,7 @@
 #
 # Runs `mc scan` (read-only, zero-dependency) over your agent's tool definitions
 # and FAILS THE BUILD when it finds a CATASTROPHIC, ungoverned capability: an
-# irreversible action with a wide blast radius that no gate protects.
+# dangerous tool your agent can fire on its own that no gate protects.
 #
 # Nothing leaves the runner. No signup, no server, no telemetry. It runs the same
 # open-source CLI you run locally, via npx, with nothing to install.
@@ -20,7 +20,7 @@
 #       policy: mc-policy.json  # optional explicit policy file
 
 name: 'mc scan'
-description: "See what your AI agent can do that you can't undo, and fail CI on ungoverned catastrophic tools."
+description: "Find what your AI agent can do on its own, and fail CI on ungoverned catastrophic tools."
 author: 'MakerChecker'
 
 branding:

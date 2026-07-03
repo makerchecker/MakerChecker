@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// mc scan — see what your AI agent can do that you can't undo, in 60 seconds,
+// mc scan — find what your agent can do on its own, in 60 seconds,
 // named against the real disaster it resembles.
 //
 // Read-only. No signup, no server, no telemetry. Nothing leaves your machine.
@@ -48,7 +48,7 @@ function parseArgs(argv) {
   return { positional, flags };
 }
 
-const USAGE = `mc scan — see what your AI agent can do that you can't undo.
+const USAGE = `mc scan — find what your agent can do on its own, before anyone can stop it.
 
   scan <path> [--json | --markdown] [--policy <file>] [--fail-on <severity>]
   scan init [<path>] [--policy <outfile>]
@@ -97,7 +97,7 @@ if (isInit) {
   const gated = Object.keys(policyObj.allow || {}).length;
   console.log('');
   console.log(`Wrote ${relative(process.cwd(), outPath) || outPath} — a deny-by-default policy.`);
-  console.log(`  ${gated} irreversible tool(s) now require a gate before they can run.`);
+  console.log(`  ${gated} tool(s) your agent could fire on its own now require a gate.`);
   console.log('');
   console.log('This file is both the scan config and the governance policy.');
   console.log('The free scan generated it; the self-hosted MakerChecker engine enforces');

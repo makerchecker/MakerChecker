@@ -1,7 +1,7 @@
 {
   "name": "@makerchecker/scan",
   "version": "0.2.0",
-  "description": "See what your AI agent can do that you can't undo, in 60 seconds, named against the real disaster it resembles.",
+  "description": "mc scan finds what your AI agent can do on its own, before anyone can stop it.",
   "type": "module",
   "bin": {
     "scan": "./scan.mjs",
@@ -23,7 +23,7 @@
     "agent-safety",
     "llm",
     "mcp",
-    "blast-radius",
+    "guardrails",
     "governance",
     "makerchecker"
   ],

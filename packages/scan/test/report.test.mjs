@@ -131,7 +131,7 @@ test('renderTerminal produces every expected section', () => {
   assert.match(s, /1 high/);
   assert.match(s, /1 medium/);
   assert.match(s, /1 governed/);
-  assert.match(s, /2 reversible/);
+  assert.match(s, /2 certified/);
 
   // corpus link + footer
   assert.match(s, /Agent Incident Database \(41\)/);
@@ -164,7 +164,7 @@ test('renderTerminal handles an all-clear (no ungoverned findings)', () => {
     counts: { CATASTROPHIC: 0, HIGH: 0, MEDIUM: 0, OK: 2, GOVERNED: 1 },
   };
   const s = withTTY(false, () => renderTerminal(clean, cleanMeta));
-  assert.match(s, /Nothing your agent can do that it cannot undo/);
+  assert.match(s, /CERTIFIED/);
   assert.doesNotMatch(s, /Findings \(/);
   assert.match(s, /Governed \(1\)/);
 });
@@ -221,6 +221,6 @@ test('renderMarkdown produces a shareable card with the required sections', () =
 
 test('renderMarkdown handles no findings gracefully', () => {
   const md = renderMarkdown([], { ...meta, toolCount: 0, counts: { CATASTROPHIC: 0, HIGH: 0, MEDIUM: 0, OK: 0, GOVERNED: 0 } });
-  assert.match(md, /No ungoverned irreversible tools found/);
+  assert.match(md, /CERTIFIED/);
   assert.doesNotMatch(md, /### Findings/);
 });
