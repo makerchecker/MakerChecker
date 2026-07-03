@@ -101,11 +101,17 @@ export const SIGNATURES = [
     why: 'A payment or transfer is a one-way door. It needs a hard per-transaction cap, a per-run invocation cap (the kill switch), and a human on anything over the line. An agent that can move money and read untrusted input is a drain waiting for a prompt injection.',
   },
   {
+    // SECURITIES trading, not commerce. FALSE-POSITIVE DISCIPLINE: the argHints
+    // are market-specific (ticker, shares, notional, side, position...) so a
+    // procurement tool like restock_item(sku, quantity) falls through to
+    // autonomous-spend instead of being called a Knight-Capital runaway. Generic
+    // commerce words (quantity, price, cost) were REMOVED — they overlap every
+    // shopping cart. 'trade'/'short'/'long' are the unambiguous market verbs.
     id: 'execute-trade',
     category: 'runaway-execution',
     verbs: ['trade', 'buy', 'sell', 'order', 'execute', 'submit', 'place', 'short', 'long', 'purchase'],
-    argHints: ['quantity', 'qty', 'shares', 'notional', 'ticker', 'symbol', 'side', 'price', 'contract', 'lot', 'position', 'market', 'limit', 'volume'],
-    strongVerbs: [],
+    argHints: ['shares', 'notional', 'ticker', 'symbol', 'side', 'lot', 'position', 'brokerage', 'portfolio', 'equity', 'option', 'futures'],
+    strongVerbs: ['trade', 'short', 'long'],
     severity: 'CATASTROPHIC',
     action: 'places market orders that execute at machine speed with no ceiling',
     resembles: { aid: 'AID-2012-0001', title: 'the Knight Capital runaway that lost ~$440M in 45 minutes with no kill switch' },
@@ -122,12 +128,14 @@ export const SIGNATURES = [
     // FALSE-POSITIVE DISCIPLINE: 'stock' is NOT a verb here. A bare noun like
     // 'stock' in a tool name (get_stock_info, visualize_stock) is market DATA,
     // not a purchase. Spend must be confirmed by a money/commerce argHint
-    // (amount, price, quantity, order, payment, currency, discount, ...) or by
-    // an unambiguous spend verb in the name (buy, purchase, wire, refund, pay,
-    // order, restock, reorder, procure).
+    // (amount, price, quantity, payment, currency, discount, ...) or by an
+    // unambiguous spend verb in the name (buy, purchase, wire, refund, pay,
+    // restock, reorder, procure). 'order' is NOT a strong verb — it collides
+    // with sort-order ("orderColumns", "order by"), so it only fires WITH a
+    // commerce argHint present.
     verbs: ['purchase', 'order', 'buy', 'restock', 'reorder', 'checkout', 'subscribe', 'procure', 'pay', 'refund', 'wire'],
-    argHints: ['inventory', 'sku', 'supplier', 'vendor', 'cart', 'product', 'catalog', 'price', 'amount', 'discount', 'quantity', 'qty', 'order', 'payment', 'currency', 'budget', 'cost'],
-    strongVerbs: ['buy', 'purchase', 'wire', 'refund', 'pay', 'order', 'restock', 'reorder', 'procure'],
+    argHints: ['inventory', 'sku', 'supplier', 'vendor', 'cart', 'product', 'catalog', 'price', 'amount', 'discount', 'quantity', 'qty', 'payment', 'currency', 'budget', 'cost'],
+    strongVerbs: ['buy', 'purchase', 'wire', 'refund', 'pay', 'restock', 'reorder', 'procure'],
     severity: 'HIGH',
     action: 'commits real spend (buys stock, sets prices, gives discounts) with no per-transaction cap',
     resembles: { aid: 'AID-2025-0009', title: "Anthropic's Claudius shopkeeper (Project Vend), which placed real orders, priced below cost, and gave inventory away" },
@@ -171,9 +179,15 @@ export const SIGNATURES = [
   {
     id: 'send-message',
     category: 'binding-commitment',
+    // 'to' is NOT an argHint — it is too generic ("to the user", "convert X to
+    // Y") and made every "sends a message to the user" clarification prompt look
+    // like an outbound public statement. The generic verbs (message/post/reply/
+    // comment/call) need a real audience argHint (recipient, channel, customer,
+    // public, an address); the specific ones (email/tweet/publish/slack/sms/dm)
+    // are unambiguous enough to fire on the name alone.
     verbs: ['email', 'message', 'post', 'publish', 'tweet', 'notify', 'reply', 'comment', 'dm', 'slack', 'sms', 'call'],
-    argHints: ['to', 'recipient', 'channel', 'body', 'subject', 'audience', 'customer', 'public', 'cc', 'bcc', 'phone', 'address'],
-    strongVerbs: [],
+    argHints: ['recipient', 'channel', 'body', 'subject', 'audience', 'customer', 'public', 'cc', 'bcc', 'phone', 'address'],
+    strongVerbs: ['email', 'tweet', 'publish', 'slack', 'sms', 'dm'],
     severity: 'HIGH',
     action: 'makes a binding or public statement on your behalf',
     resembles: { aid: 'AID-2022-0001', title: "Air Canada, held liable for its chatbot's misstatement of a fare policy" },
@@ -184,11 +198,16 @@ export const SIGNATURES = [
     why: 'A message an agent sends can bind you (a promise, a commitment) or leak. Outbound to customers or the public should pass a gate, not go out on a default grant.',
   },
   {
+    // The action verbs (promise/agree/commit/honor/quote/offer) are unambiguous
+    // commitments and fire on the name alone. The value nouns (price/discount/
+    // refund) are NOT strong — `getPrice`/`get_refund_status` only READ a value.
+    // With the distinct-token rule in classify, a value noun needs a SEPARATE
+    // commerce argHint (amount, terms, contract...) to count as a commitment.
     id: 'bind-commitment',
     category: 'binding-commitment',
     verbs: ['quote', 'offer', 'promise', 'agree', 'commit', 'confirm', 'price', 'discount', 'refund', 'honor'],
     argHints: ['price', 'quote', 'offer', 'policy', 'contract', 'customer', 'deal', 'terms', 'discount', 'payout', 'amount'],
-    strongVerbs: [],
+    strongVerbs: ['promise', 'agree', 'commit', 'honor', 'quote', 'offer'],
     severity: 'HIGH',
     action: 'agrees to prices, refunds, or terms a court can hold you to',
     resembles: { aid: 'AID-2023-0001', title: 'the prompt-injected Chevrolet of Watsonville chatbot that agreed to sell a car for $1' },

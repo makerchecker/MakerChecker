@@ -20,16 +20,31 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, join, relative, extname, basename } from 'node:path';
 
 /**
- * @typedef {{ name: string, description: string, params: string[], source: string, body?: string, bodyLine?: number }} Tool
+ * @typedef {{ name: string, description: string, params: string[], source: string, body?: string, bodyLine?: number, sandboxed?: boolean }} Tool
  *
  * `body` (code discovery only) is a snippet of the source following the tool
  * definition — up to BODY_MAX_LINES lines — used by classify() for body-signal
  * detection. `bodyLine` is the 1-based line number of the first snippet line.
+ * `sandboxed` is set when the file stands up a disposable execution sandbox.
  */
 
 const CODE_EXT = new Set(['.py', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '__pycache__', 'venv', '.venv']);
+// Test and spec directories: a "tool" defined only in a test is a fixture, not a
+// capability the agent ships. Flagging one (e.g. a <Rating> tag inside a pytest
+// config) is a false positive an outreach PR cannot survive.
+const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec', 'specs', 'e2e', '__mocks__', 'fixtures', 'testdata']);
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // skip pathologically large files
+
+// A test/spec FILE by name: pytest (test_*.py, *_test.py, conftest.py) and
+// JS/TS (*.test.*, *.spec.*). Excluded from discovery for the same reason.
+function isTestFile(name) {
+  const n = name.toLowerCase();
+  if (n === 'conftest.py') return true;
+  if (/^test_.*\.py$/.test(n) || /_test\.py$/.test(n)) return true;
+  if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(n)) return true;
+  return false;
+}
 
 /**
  * Parse tool definitions from a file or directory.
@@ -80,9 +95,10 @@ function walk(dir, out) {
     if (ent.isSymbolicLink()) continue; // avoid symlink loops
     const full = join(dir, name);
     if (ent.isDirectory()) {
-      if (SKIP_DIRS.has(name)) continue;
+      if (SKIP_DIRS.has(name) || TEST_DIRS.has(name.toLowerCase())) continue;
       walk(full, out);
     } else if (ent.isFile()) {
+      if (isTestFile(name)) continue;
       const ext = extname(name).toLowerCase();
       if (ext === '.json' || CODE_EXT.has(ext)) out.push(full);
     }
@@ -186,9 +202,19 @@ function schemaParamNames(schema) {
 
 const BODY_MAX_LINES = 60;
 
+// Disposable-execution markers: if a file stands up an e2b sandbox, a container,
+// or a WASM/RestrictedPython interpreter, code the agent runs is confined to it.
+// Kept in sync with classify.mjs SANDBOX_RE.
+const SANDBOX_RE = /\be2b\b|@e2b\/|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/;
+
 function extractCode(content, rel, out) {
   const lineAt = makeLineAt(content);
   const lines = content.split('\n');
+  // A sandbox is usually stood up once at module top (e.g. Sandbox.create()),
+  // far from the tool body, so we record it at the file level and carry it onto
+  // every tool discovered here — classify() uses it to downgrade a dangerous
+  // action that can only reach a disposable VM, not the user's real systems.
+  const fileHasSandbox = SANDBOX_RE.test(content);
   const push = (name, description, params, index) => {
     const n = (name || '').trim();
     if (!n) return;
@@ -207,6 +233,7 @@ function extractCode(content, rel, out) {
       tool.body = body;
       tool.bodyLine = bodyLine;
     }
+    if (fileHasSandbox) tool.sandboxed = true;
     out.push(tool);
   };
 

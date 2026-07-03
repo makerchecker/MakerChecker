@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { classify, detectBodySignals } from '../lib/classify.mjs';
+import { classify, detectBodySignals, detectSandbox, detectGate } from '../lib/classify.mjs';
 import { SIGNATURES } from '../lib/signatures.mjs';
 
 const basePolicy = { version: 1, ignore: [], allow: {}, customSignatures: [], path: null };
@@ -33,6 +33,30 @@ test('a delete tool classifies as CATASTROPHIC and names a real incident', () =>
   assert.equal(f.tool, deleteTool);
 });
 
+// Precision regressions from the real-repo calibration pass (evo.ninja):
+// read/utility tools that verb-collided with commerce/messaging signatures.
+const readOnlyDecoys = [
+  { name: 'orderColumns', description: 'Order the columns of a CSV alphabetically', params: [], source: 'x.json' },
+  { name: 'getPrice', description: 'Get the current price of a specified cryptocurrency.', params: [], source: 'x.json' },
+  { name: 'ask', description: 'Sends a message to the user and waits for user response.', params: [], source: 'x.json' },
+];
+for (const tool of readOnlyDecoys) {
+  test(`read/utility decoy "${tool.name}" does not false-positive`, () => {
+    const f = classify(tool, SIGNATURES, basePolicy);
+    assert.equal(f.severity, 'OK', `${tool.name} matched ${f.signature}`);
+  });
+}
+
+// ...but the real thing still fires: a distinct commerce/audience signal present.
+test('genuine spend / commitment / message tools still classify HIGH', () => {
+  const buy = classify({ name: 'restock_item', description: 'Purchase inventory from a supplier', params: ['sku', 'quantity'], source: 'x.json' }, SIGNATURES, basePolicy);
+  assert.equal(buy.signature, 'autonomous-spend');
+  const setPrice = classify({ name: 'setPrice', description: 'Set the price for a customer contract', params: ['amount'], source: 'x.json' }, SIGNATURES, basePolicy);
+  assert.equal(setPrice.signature, 'bind-commitment');
+  const tweet = classify({ name: 'postTweet', description: 'Publish a tweet', params: [], source: 'x.json' }, SIGNATURES, basePolicy);
+  assert.equal(tweet.signature, 'send-message');
+});
+
 test('a search tool classifies as OK with all hoisted fields null', () => {
   const f = classify(searchTool, SIGNATURES, basePolicy);
   assert.equal(f.severity, 'OK');
@@ -42,6 +66,45 @@ test('a search tool classifies as OK with all hoisted fields null', () => {
   assert.equal(f.action, null);
   assert.equal(f.why, null);
   assert.equal(f.governedBy, null);
+});
+
+test('detectSandbox / detectGate recognise the markers they should', () => {
+  assert.equal(detectSandbox('const sbx = await Sandbox.create()'), true);
+  assert.equal(detectSandbox('from e2b import Sandbox'), true);
+  assert.equal(detectSandbox('subprocess.run(cmd)'), false);
+  assert.equal(detectGate('if not yes_no("run this?"): return'), true);
+  assert.equal(detectGate('answer = input("are you sure? ")'), true);
+  assert.equal(detectGate('subprocess.run(cmd)'), false);
+});
+
+test('a sandboxed shell tool is downgraded from CATASTROPHIC to HIGH with a reason', () => {
+  const tool = {
+    name: 'run_command',
+    description: 'Execute a shell command.',
+    params: ['cmd'],
+    source: 'agent.ts:10',
+    body: 'const sbx = await Sandbox.create();\nawait sbx.commands.run(cmd);',
+    sandboxed: true,
+  };
+  const f = classify(tool, SIGNATURES, basePolicy);
+  assert.equal(f.signature, 'run-shell');
+  assert.equal(f.severity, 'HIGH'); // was CATASTROPHIC
+  assert.equal(f.mitigation.kind, 'sandbox');
+  assert.match(f.action, /disposable sandbox/);
+});
+
+test('an in-body confirmation gate downgrades a destructive tool', () => {
+  const tool = {
+    name: 'wipe',
+    description: 'Delete all records from the database.',
+    params: [],
+    source: 'x.py:1',
+    body: 'if not confirm("are you sure?"):\n    return\n    db.drop_all()',
+  };
+  const f = classify(tool, SIGNATURES, basePolicy);
+  assert.equal(f.signature, 'destroy-data');
+  assert.equal(f.severity, 'HIGH'); // was CATASTROPHIC, gated -> one step down
+  assert.equal(f.mitigation.kind, 'gate');
 });
 
 test('an allow-listed dangerous tool downgrades to OK but keeps the match + sets governedBy', () => {
