@@ -39,6 +39,9 @@ imported and used standalone**, without the audit chain or any database.
   files at runtime.
 - Denial events now carry a distinct `enforcement.sod_violation` event type,
   matching the server's audit parity.
+- **A supplied `privateKey` with no `publicKeyPem` now derives the PEM** instead
+  of exporting a signed-but-unverifiable bundle (`publicKeyPem: null`). The public
+  half is determined by the private key, so the exported bundle always verifies.
 
 ### Changed
 
