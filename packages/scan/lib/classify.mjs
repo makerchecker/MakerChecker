@@ -64,35 +64,49 @@ const VALUE_PARAM_RE = /^(amount|amt|price|total|subtotal|sum|cost|fee|value|bal
 const TARGET_PARAM_RE = /^(recipient|to|to_account|dest|destination|account|account_id|account_number|iban|routing|card|card_number|wallet|wallet_address|payee|beneficiary|address)$/;
 
 /**
- * Build a matcher closure over one tool. A term "appears" when it is a whole
- * TOKEN of the tool name (camelCase/snake/kebab-aware) — so `deleteFile` matches
- * `delete` but `retrieval` does NOT match `eval` — OR a whole-token match inside
- * the description or any parameter name.
+ * Build matchers over one tool. Verbs describe what the tool DOES, so they match
+ * the NAME (camelCase/snake/kebab-token-aware) or the DESCRIPTION only — never a
+ * parameter name. That is the whole point of the split: `register_patient(email,
+ * phone)` collects contact data, it does not "email" anyone, so the param named
+ * `email` must not satisfy the send-message verb. ArgHints describe PARAMETERS,
+ * so they additionally match param names. Both use whole-token matching in text
+ * (so `run` never fires on "running") and camelCase tokens in the name.
  * @param {Tool} tool
  */
 function makeMatcher(tool) {
   const tokens = nameTokens(tool?.name);
   const params = Array.isArray(tool?.params) ? tool.params.map(lc) : [];
-  const haystack = lc(tool?.description) + ' ' + params.join(' ');
-  return function appears(term) {
+  const descLc = lc(tool?.description);
+  const paramsLc = params.join(' ');
+  const inText = (t, hay) => new RegExp('\\b' + esc(t) + '\\b').test(hay);
+  // Verbs: name token or a word in the description. NOT parameter names.
+  const verbAppears = (term) => {
     const t = lc(term);
     if (!t) return false;
-    if (tokens.has(t)) return true;
-    return new RegExp('\\b' + esc(t) + '\\b').test(haystack);
+    return tokens.has(t) || inText(t, descLc);
   };
+  // ArgHints: name token, or a word in the description OR a parameter name.
+  const argAppears = (term) => {
+    const t = lc(term);
+    if (!t) return false;
+    return tokens.has(t) || inText(t, descLc + ' ' + paramsLc);
+  };
+  return { verbAppears, argAppears };
 }
 
 /**
- * Does this signature match the tool? One of its verbs must appear AND either an
- * argHint is present OR one of its strongVerbs appears in the tool name (the
- * "strong verb matches on the name alone" rule).
+ * Does this signature match the tool? One of its verbs must appear (in the name
+ * or description) AND either an argHint is present (name/description/params) OR
+ * one of its strongVerbs appears in the tool name (the "strong verb matches on
+ * the name alone" rule).
  * @param {Signature} sig
- * @param {(term: string) => boolean} appears
+ * @param {{ verbAppears: (t: string) => boolean, argAppears: (t: string) => boolean }} m
  * @param {Set<string>} tokens  camelCase/snake-aware tokens of the tool name
  */
-function signatureMatches(sig, appears, tokens) {
+function signatureMatches(sig, m, tokens) {
+  const { verbAppears, argAppears } = m;
   const verbs = Array.isArray(sig?.verbs) ? sig.verbs : [];
-  const matchedVerbs = verbs.filter(appears);
+  const matchedVerbs = verbs.filter(verbAppears);
   if (!matchedVerbs.length) return false;
   // Distinct-token rule: the confirming argHint must be a DIFFERENT token than
   // the one that satisfied the verb. A single word that lives in both lists
@@ -100,7 +114,7 @@ function signatureMatches(sig, appears, tokens) {
   // so `getPrice` no longer self-confirms as a pricing commitment.
   const matched = new Set(matchedVerbs.map(lc));
   const argHints = Array.isArray(sig?.argHints) ? sig.argHints : [];
-  if (argHints.some((a) => !matched.has(lc(a)) && appears(a))) return true;
+  if (argHints.some((a) => !matched.has(lc(a)) && argAppears(a))) return true;
   // Strong verbs match on the NAME alone — but as a whole token, so "eval" fires
   // on an "eval" tool, not on "retrieval"/"evaluator".
   const strongVerbs = Array.isArray(sig?.strongVerbs) ? sig.strongVerbs : [];
@@ -198,14 +212,14 @@ export function classify(tool, signatures, policy) {
   }
 
   // Find the highest-severity matching signature (first match wins on ties).
-  const appears = makeMatcher(tool);
+  const matcher = makeMatcher(tool);
   const tokenList = nameTokenList(toolName);
   const tokens = new Set(tokenList);
   const lead = tokenList[0] || '';
   const sigs = Array.isArray(signatures) ? signatures : [];
   let best = null;
   for (const sig of sigs) {
-    if (!sig || !signatureMatches(sig, appears, tokens)) continue;
+    if (!sig || !signatureMatches(sig, matcher, tokens)) continue;
     // Leading read/negation verb: the name-based match is a false positive for a
     // write/spend signature (body evidence below can still re-raise it if the
     // function actually acts). Skip it and let a lower-severity or OK match stand.
