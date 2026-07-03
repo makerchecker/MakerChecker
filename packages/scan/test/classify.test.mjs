@@ -82,6 +82,26 @@ test('genuine refund/exfil tools survive the leading-verb guard', () => {
   assert.equal(exfil.signature, 'exfiltrate'); // read IS the risk here — not suppressed
 });
 
+// Verb/param split: a verb must appear in the NAME or DESCRIPTION, never a
+// parameter name. A contact-data field (email/phone/address) on a data-entry
+// tool is not an action.
+test('contact-data params do not make a data-entry tool a messenger', () => {
+  for (const t of [
+    { name: 'register_patient', description: 'Register a new patient in the system', params: ['full_name', 'email', 'phone', 'address'] },
+    { name: 'update_patient', description: 'Update a patient record', params: ['patient_id', 'address', 'phone'] },
+    { name: 'create_contact', description: 'Create a contact', params: ['name', 'email', 'phone'] },
+  ]) {
+    const f = classify({ ...t, source: 'x.py' }, SIGNATURES, basePolicy);
+    assert.equal(f.severity, 'OK', `${t.name} should be OK`);
+  }
+});
+test('real messaging tools still fire (verb in name or description)', () => {
+  const email = classify({ name: 'send_email', description: 'Send an email', params: ['to', 'subject', 'body'], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.equal(email.signature, 'send-message');
+  const notify = classify({ name: 'notify_customer', description: 'Notify the customer', params: ['message', 'channel'], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.equal(notify.signature, 'send-message');
+});
+
 // Model-controlled value: a free amount/recipient parameter turns a finding into
 // a concrete bug and is flagged as such.
 test('a model-chosen amount is flagged as model-controlled', () => {
