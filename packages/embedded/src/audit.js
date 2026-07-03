@@ -20,7 +20,13 @@
 // events pulls in no keypair; the Ed25519 pair is generated only the first time
 // you export (or sign), unless you pass your own PEMs. A caller can therefore
 // record a chain, inspect it, and discard it without ever generating a key.
-import { createHash, generateKeyPairSync, sign as edSign, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  generateKeyPairSync,
+  sign as edSign,
+  randomUUID,
+} from "node:crypto";
 
 import { canonicalJson } from "./vendor/canonical-json.js";
 
@@ -36,9 +42,12 @@ export function genesisPrevHash(instanceId) {
 
 // The event hash covers exactly the camelCase field set the offline verifier
 // re-derives from a stored row (verify-core.js#recomputeHash). `seq` is
-// deliberately excluded; entityType/entityId/runId are null (not undefined) when
-// unset, because canonicalJson drops undefined-valued members and that would
-// change the hash.
+// deliberately excluded: ordering and integrity are established by the prevHash
+// chain, the event count, and the signed first/last seq in the manifest — the
+// per-row `seq` is a convenience label, not an independent integrity field, so a
+// consumer should trust the chain, not a single row's seq in isolation.
+// entityType/entityId/runId are null (not undefined) when unset, because
+// canonicalJson drops undefined-valued members and that would change the hash.
 function hashEvent({ id, occurredAt, actor, eventType, entityType, entityId, runId, payload, prevHash }) {
   return sha256Hex(
     canonicalJson({ id, occurredAt, actor, eventType, entityType, entityId, runId, payload, prevHash }),
@@ -63,6 +72,14 @@ export function createAuditChain(opts = {}) {
   let privateKey = opts.privateKey ?? null;
   let publicKeyPem = opts.publicKeyPem ?? null;
   let keyIsEphemeral = !opts.privateKey;
+
+  // A caller-supplied private key with no matching PEM would otherwise export a
+  // bundle whose manifest has publicKeyPem: null — signed but unverifiable. The
+  // public half is fully determined by the private key, so derive it rather than
+  // emit an un-checkable log.
+  if (privateKey && !publicKeyPem) {
+    publicKeyPem = createPublicKey(privateKey).export({ type: "spki", format: "pem" });
+  }
 
   function ensureKey() {
     if (privateKey) return;

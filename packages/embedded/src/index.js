@@ -38,7 +38,7 @@ export {
 export { createGovernor as createGovernorCore } from "./governor.js";
 
 // The optional evidentiary layer.
-export { createAuditChain, genesisPrevHash, SCHEMA_VERSION } from "./audit.js";
+export { createAuditChain, genesisPrevHash, GENESIS_PREFIX, SCHEMA_VERSION } from "./audit.js";
 
 /**
  * Batteries-included governor: a stateful enforcement point with a signed,

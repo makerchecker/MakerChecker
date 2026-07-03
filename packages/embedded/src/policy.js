@@ -225,7 +225,7 @@ export function decide(policy, request, context = {}) {
   // 3. skill exists
   const skill = policy.skills.get(skillRef);
   if (!skill) {
-    return deny(DECISION_CODES.SKILL_NOT_FOUND, `skill "${skillRef}" is not published`);
+    return deny(DECISION_CODES.SKILL_NOT_FOUND, `skill "${skillRef}" does not exist`);
   }
   // 4. skill published
   if (skill.status !== "published") {

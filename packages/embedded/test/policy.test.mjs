@@ -57,6 +57,29 @@ test("unknown skill and deprecated skill", () => {
   assert.equal(decide(samplePolicy(), { agent: "bot", skill: "old@1" }).code, "skill_deprecated");
 });
 
+test("skill_deprecated fires for ANY non-published status, not just 'deprecated'", () => {
+  // The rule is "publishable == status 'published'", so every other status —
+  // draft, archived, or an unknown one — must be refused. Guards against a
+  // regression that only special-cased the literal string 'deprecated'.
+  for (const status of ["draft", "archived", "in-review", "retired", "totally-made-up"]) {
+    const p = definePolicy({
+      skills: { "s@1": { status } },
+      roles: { r: { grants: ["s@1"] } },
+      agents: { a: { role: "r" } },
+    });
+    const d = decide(p, { agent: "a", skill: "s@1" });
+    assert.equal(d.code, "skill_deprecated", `status "${status}" should be refused as non-published`);
+    assert.ok(d.reason.includes(status), `reason should name the status "${status}"`);
+  }
+  // and 'published' is the single status that passes the gate
+  const ok = definePolicy({
+    skills: { "s@1": { status: "published" } },
+    roles: { r: { grants: ["s@1"] } },
+    agents: { a: { role: "r" } },
+  });
+  assert.equal(decide(ok, { agent: "a", skill: "s@1" }).effect, "allow");
+});
+
 test("high-risk is refused inline but allowed with a separation gate", () => {
   const p = samplePolicy();
   assert.equal(decide(p, { agent: "officer", skill: "pay@1" }).code, "high_risk_requires_gate");

@@ -41,11 +41,21 @@ enforce(policy, { agent: "agent-1", skill: "execute-payment@1" });
 ```
 
 Separation of duties is passed in as context — you tell `decide()` which roles
-have already acted, and it stays pure:
+have already acted this session, and it stays pure. It needs a policy that
+declares the conflicting roles:
 
 ```js
-decide(policy, { agent: "checker-bot", skill: "approve@1" }, { sessionActors: ["maker"] });
-// { effect: "deny", code: "sod_violation", ... }  if maker/checker are in conflict
+const sod = definePolicy({
+  skills: { "submit-payment@1": {}, "approve-payment@1": {} },
+  roles:  {
+    maker:   { grants: ["submit-payment@1"] },
+    checker: { grants: ["approve-payment@1"], conflicts: ["maker"] },
+  },
+  agents: { "checker-bot": { role: "checker" } },
+});
+
+decide(sod, { agent: "checker-bot", skill: "approve-payment@1" }, { sessionActors: ["maker"] });
+// { effect: "deny", code: "sod_violation", ... }  — the "maker" role already acted this session
 ```
 
 The policy is a plain, serializable spec (`policy.toJSON()` / `policyToSpec`), so

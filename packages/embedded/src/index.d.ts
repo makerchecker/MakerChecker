@@ -1,7 +1,7 @@
 // Type declarations for @makerchecker/embedded — the batteries-included root.
 export * from "./policy.js";
 
-export { createAuditChain, genesisPrevHash, SCHEMA_VERSION } from "./audit.js";
+export { createAuditChain, genesisPrevHash, GENESIS_PREFIX, SCHEMA_VERSION } from "./audit.js";
 export type {
   AuditChain,
   AuditChainOptions,

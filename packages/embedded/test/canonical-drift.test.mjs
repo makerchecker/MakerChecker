@@ -44,8 +44,37 @@ test("vendored canonicalJson matches the source serializer on every fixture", ()
   }
 });
 
-test("both reject the same ill-formed input (fail-closed parity)", () => {
-  const bad = "\ud800"; // unpaired high surrogate
-  assert.throws(() => vendored(bad));
-  assert.throws(() => source(bad));
+// Inputs both serializers must REJECT — one per throwing branch. The plain
+// value-fixtures above only exercise the happy paths, so a divergence in an
+// error branch (a vendored copy that silently coerced NaN, or accepted a lone
+// surrogate) would pass unnoticed and let a bundle sign under one serializer yet
+// fail — or falsely verify — under the other. Confirmed both throw for each.
+const REJECTED = [
+  ["NaN", NaN],
+  ["Infinity", Infinity],
+  ["-Infinity", -Infinity],
+  ["BigInt", 5n],
+  ["function", () => {}],
+  ["symbol", Symbol("x")],
+  ["Date (non-plain object)", new Date(0)],
+  ["class instance (non-plain object)", new (class C { constructor() { this.a = 1; } })()],
+  ["lone surrogate as a value", "\ud800"],
+  ["lone surrogate in a key", { "\ud800": 1 }],
+  ["lone surrogate nested in an array", ["\ud800"]],
+  ["lone surrogate nested in an object value", { k: "\ud800" }],
+];
+
+test("vendored and source reject the same inputs (fail-closed parity on every throwing branch)", () => {
+  for (const [name, input] of REJECTED) {
+    assert.throws(() => vendored(input), undefined, `vendored should reject ${name}`);
+    assert.throws(() => source(input), undefined, `source should reject ${name}`);
+  }
+});
+
+test("both accept a null-prototype object as a plain property bag", () => {
+  // Object.create(null) is NOT a class instance — it must serialize like a plain
+  // object (sorted keys), not be rejected as a non-plain object.
+  const bag = Object.assign(Object.create(null), { b: 2, a: 1 });
+  assert.equal(vendored(bag), source(bag));
+  assert.equal(vendored(bag), '{"a":1,"b":2}');
 });
