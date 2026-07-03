@@ -1,0 +1,10 @@
+{
+  "tools": [
+    { "type": "function", "function": { "name": "search_cases", "description": "Search adverse event cases by drug and date", "parameters": { "type": "object", "properties": { "drug": {"type":"string"}, "since": {"type":"string"} } } } },
+    { "type": "function", "function": { "name": "draft_narrative", "description": "Draft an ICSR narrative for a case", "parameters": { "type": "object", "properties": { "caseId": {"type":"string"} } } } },
+    { "type": "function", "function": { "name": "submit_e2b_report", "description": "Submit the expedited E2B report to the regulator", "parameters": { "type": "object", "properties": { "caseId": {"type":"string"}, "reportability": {"type":"string"} } } } },
+    { "type": "function", "function": { "name": "delete_case_records", "description": "Delete case records from the safety database", "parameters": { "type": "object", "properties": { "table": {"type":"string"}, "filter": {"type":"string"} } } } },
+    { "type": "function", "function": { "name": "wire_reimbursement", "description": "Wire a patient reimbursement", "parameters": { "type": "object", "properties": { "amount": {"type":"number"}, "account": {"type":"string"} } } } },
+    { "type": "function", "function": { "name": "email_patient", "description": "Email a patient a message", "parameters": { "type": "object", "properties": { "to": {"type":"string"}, "body": {"type":"string"} } } } }
+  ]
+}
