@@ -119,9 +119,15 @@ export const SIGNATURES = [
   {
     id: 'autonomous-spend',
     category: 'runaway-execution',
-    verbs: ['purchase', 'order', 'buy', 'restock', 'reorder', 'checkout', 'subscribe', 'procure', 'stock', 'discount'],
-    argHints: ['inventory', 'stock', 'sku', 'supplier', 'vendor', 'cart', 'product', 'catalog', 'price', 'discount', 'quantity', 'budget'],
-    strongVerbs: ['restock', 'reorder', 'procure'],
+    // FALSE-POSITIVE DISCIPLINE: 'stock' is NOT a verb here. A bare noun like
+    // 'stock' in a tool name (get_stock_info, visualize_stock) is market DATA,
+    // not a purchase. Spend must be confirmed by a money/commerce argHint
+    // (amount, price, quantity, order, payment, currency, discount, ...) or by
+    // an unambiguous spend verb in the name (buy, purchase, wire, refund, pay,
+    // order, restock, reorder, procure).
+    verbs: ['purchase', 'order', 'buy', 'restock', 'reorder', 'checkout', 'subscribe', 'procure', 'pay', 'refund', 'wire'],
+    argHints: ['inventory', 'sku', 'supplier', 'vendor', 'cart', 'product', 'catalog', 'price', 'amount', 'discount', 'quantity', 'qty', 'order', 'payment', 'currency', 'budget', 'cost'],
+    strongVerbs: ['buy', 'purchase', 'wire', 'refund', 'pay', 'order', 'restock', 'reorder', 'procure'],
     severity: 'HIGH',
     action: 'commits real spend (buys stock, sets prices, gives discounts) with no per-transaction cap',
     resembles: { aid: 'AID-2025-0009', title: "Anthropic's Claudius shopkeeper (Project Vend), which placed real orders, priced below cost, and gave inventory away" },
