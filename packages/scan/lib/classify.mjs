@@ -14,7 +14,8 @@
  * @typedef {import('./signatures.mjs').IncidentRef} IncidentRef
  * @typedef {import('./parse.mjs').Tool} Tool
  * @typedef {import('./policy.mjs').Policy} Policy
- * @typedef {{ tool: Tool, severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM'|'OK', signature: string|null, resembles: IncidentRef|null, control: Control|null, action: string|null, why: string|null, governedBy: { gate: Control, note: string }|null }} Finding
+ * @typedef {{ kind: string, marker: string, line: number }} BodyEvidence
+ * @typedef {{ tool: Tool, severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM'|'OK', signature: string|null, resembles: IncidentRef|null, control: Control|null, action: string|null, why: string|null, governedBy: { gate: Control, note: string }|null, evidence?: BodyEvidence[] }} Finding
  */
 
 const SEV_RANK = { OK: 0, MEDIUM: 1, HIGH: 2, CATASTROPHIC: 3 };
@@ -57,6 +58,42 @@ function signatureMatches(sig, appears, nameLc) {
   if (argHints.some(appears)) return true;
   const strongVerbs = Array.isArray(sig?.strongVerbs) ? sig.strongVerbs : [];
   return strongVerbs.some((v) => nameLc.includes(lc(v)));
+}
+
+// ---- body signals ------------------------------------------------------------
+//
+// High-signal static markers in a tool's function body. What a tool is NAMED is a
+// claim; what its body CALLS is evidence. A body signal can only RAISE severity —
+// a blandly-named tool that shells out is treated like a shell tool — never lower
+// it. Each kind maps to the builtin signature whose incident it resembles.
+const BODY_MARKERS = [
+  { kind: 'shell', sigId: 'run-shell', severity: 'CATASTROPHIC',
+    re: /\bsubprocess\.\w+|\bos\.system\b|\bos\.popen\b|child_process|\bexecSync\b|\bexec\s*\(|\beval\s*\(/ },
+  { kind: 'destroy', sigId: 'destroy-data', severity: 'CATASTROPHIC',
+    re: /\bos\.remove\b|\bos\.unlink\b|\bshutil\.rmtree\b|\bfs\.rm(?:Sync|dir|dirSync)?\s*\(|\bfs\.unlink(?:Sync)?\s*\(|DROP\s+TABLE|DELETE\s+FROM/i },
+  { kind: 'external-send', sigId: 'exfiltrate', severity: 'HIGH',
+    re: /\brequests\.post\b|\bfetch\s*\(|\baxios\b|\bsmtplib\b|\bboto3\b|\burllib\.request\b|\bhttpx\b/ },
+  { kind: 'write', sigId: 'destroy-data', severity: 'MEDIUM',
+    re: /\bopen\s*\([^)\n]*['"][wa]b?['"]|\bwriteFileSync\b|\bfs\.writeFile\b|\bfs\.appendFile\b/ },
+];
+
+/**
+ * Scan a body snippet for high-signal markers. Returns one evidence entry per
+ * marker kind per line, with 1-based line numbers offset by `startLine`.
+ * @param {string} body
+ * @param {number} startLine
+ * @returns {Array<{ kind: string, marker: string, line: number, severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM', sigId: string }>}
+ */
+export function detectBodySignals(body, startLine = 1) {
+  const signals = [];
+  const lines = String(body ?? '').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    for (const mk of BODY_MARKERS) {
+      const m = mk.re.exec(lines[i]);
+      if (m) signals.push({ kind: mk.kind, marker: m[0].trim(), line: startLine + i, severity: mk.severity, sigId: mk.sigId });
+    }
+  }
+  return signals;
 }
 
 /**
@@ -111,6 +148,28 @@ export function classify(tool, signatures, policy) {
         governedBy: null,
       }
     : okFinding();
+
+  // Body signals: evidence from the function body can RAISE severity (never
+  // lower it). A blandly-named tool whose body shells out is a shell tool.
+  if (typeof tool.body === 'string' && tool.body) {
+    const signals = detectBodySignals(tool.body, tool.bodyLine || 1);
+    if (signals.length) {
+      finding.evidence = signals.map(({ kind, marker, line }) => ({ kind, marker, line }));
+      let top = signals[0];
+      for (const s of signals) if ((SEV_RANK[s.severity] ?? 0) > (SEV_RANK[top.severity] ?? 0)) top = s;
+      if ((SEV_RANK[top.severity] ?? 0) > (SEV_RANK[finding.severity] ?? 0)) {
+        const sig = sigs.find((s) => s && s.id === top.sigId);
+        finding.severity = top.severity;
+        if (sig) {
+          finding.signature = sig.id;
+          finding.resembles = sig.resembles ?? null;
+          finding.control = sig.control ?? null;
+          finding.action = `${sig.action} (body evidence: ${top.marker} at line ${top.line})`;
+          finding.why = sig.why ?? null;
+        }
+      }
+    }
+  }
 
   // policy.allow: this tool is already governed -> downgrade to OK, mark
   // governedBy, but KEEP the matched incident/control so the report can render

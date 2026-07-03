@@ -105,6 +105,11 @@ function heroPanel(f, style, pad) {
   if (f.why) {
     for (const l of wrapArr(f.why, W)) content.push(l);
   }
+  if (Array.isArray(f.evidence) && f.evidence.length) {
+    content.push('');
+    const ev = f.evidence.slice(0, 3).map((e) => `${e.marker} (line ${e.line})`).join(', ');
+    for (const l of wrapArr(`Body evidence: ${ev}`, W)) content.push(l);
+  }
   content.push('');
   content.push(`Seen in: ${f.tool.source || 'unknown source'}`);
 
