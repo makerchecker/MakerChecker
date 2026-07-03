@@ -23,22 +23,31 @@ const SEV_RANK = { OK: 0, MEDIUM: 1, HIGH: 2, CATASTROPHIC: 3 };
 const lc = (s) => String(s ?? '').toLowerCase();
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Split a tool name into lowercased tokens across camelCase, snake_case, and
+// kebab boundaries: "deleteFile" -> [delete, file], "PatronusEvalTool" ->
+// [patronus, eval, tool], "get_stock_info" -> [get, stock, info]. This is what
+// lets us match a verb as a WORD in the name without the substring collisions
+// that made "eval" fire on "retrieval"/"evaluator" and "system" on "ecosystem".
+function nameTokens(name) {
+  const raw = String(name ?? '').match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+|[0-9]+/g) || [];
+  return new Set(raw.map((t) => t.toLowerCase()));
+}
+
 /**
- * Build a matcher closure over one tool. A term "appears" when it is a substring
- * of the (lowercased) tool name — which catches camelCase / snake_case like
- * `deleteFile` -> `delete` — OR a whole-token match inside the description or any
- * parameter name. Whole-token matching in the haystack avoids `run` firing on
- * "running" while still catching hyphenated tokens like `force-push`.
+ * Build a matcher closure over one tool. A term "appears" when it is a whole
+ * TOKEN of the tool name (camelCase/snake/kebab-aware) — so `deleteFile` matches
+ * `delete` but `retrieval` does NOT match `eval` — OR a whole-token match inside
+ * the description or any parameter name.
  * @param {Tool} tool
  */
 function makeMatcher(tool) {
-  const name = lc(tool?.name);
+  const tokens = nameTokens(tool?.name);
   const params = Array.isArray(tool?.params) ? tool.params.map(lc) : [];
   const haystack = lc(tool?.description) + ' ' + params.join(' ');
   return function appears(term) {
     const t = lc(term);
     if (!t) return false;
-    if (name.includes(t)) return true;
+    if (tokens.has(t)) return true;
     return new RegExp('\\b' + esc(t) + '\\b').test(haystack);
   };
 }
@@ -49,9 +58,9 @@ function makeMatcher(tool) {
  * "strong verb matches on the name alone" rule).
  * @param {Signature} sig
  * @param {(term: string) => boolean} appears
- * @param {string} nameLc
+ * @param {Set<string>} tokens  camelCase/snake-aware tokens of the tool name
  */
-function signatureMatches(sig, appears, nameLc) {
+function signatureMatches(sig, appears, tokens) {
   const verbs = Array.isArray(sig?.verbs) ? sig.verbs : [];
   const matchedVerbs = verbs.filter(appears);
   if (!matchedVerbs.length) return false;
@@ -62,8 +71,10 @@ function signatureMatches(sig, appears, nameLc) {
   const matched = new Set(matchedVerbs.map(lc));
   const argHints = Array.isArray(sig?.argHints) ? sig.argHints : [];
   if (argHints.some((a) => !matched.has(lc(a)) && appears(a))) return true;
+  // Strong verbs match on the NAME alone — but as a whole token, so "eval" fires
+  // on an "eval" tool, not on "retrieval"/"evaluator".
   const strongVerbs = Array.isArray(sig?.strongVerbs) ? sig.strongVerbs : [];
-  return strongVerbs.some((v) => nameLc.includes(lc(v)));
+  return strongVerbs.some((v) => tokens.has(lc(v)));
 }
 
 // ---- body signals ------------------------------------------------------------
@@ -91,7 +102,9 @@ const BODY_MARKERS = [
 // a `rm -rf` there wipes a throwaway VM. When execution is demonstrably
 // sandboxed we downgrade and say so, rather than crying "deletes your home
 // directory" about a container. Marker in the tool body OR the surrounding file.
-const SANDBOX_RE = /\be2b\b|@e2b\/|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/;
+// Note the leading \b but no trailing \b on e2b/daytona: matches "E2BExecTool"
+// and "DaytonaPythonTool" (name-derived) as well as "from e2b import".
+const SANDBOX_RE = /\be2b|@e2b\/|\bdaytona|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/i;
 
 // An in-body human gate before the dangerous call: a confirm prompt, a yes/no,
 // an approval check. Conservative — cross-scope UI gates (an editor's
@@ -156,11 +169,11 @@ export function classify(tool, signatures, policy) {
 
   // Find the highest-severity matching signature (first match wins on ties).
   const appears = makeMatcher(tool);
-  const nameLc = lc(toolName);
+  const tokens = nameTokens(toolName);
   const sigs = Array.isArray(signatures) ? signatures : [];
   let best = null;
   for (const sig of sigs) {
-    if (!sig || !signatureMatches(sig, appears, nameLc)) continue;
+    if (!sig || !signatureMatches(sig, appears, tokens)) continue;
     const rank = SEV_RANK[sig.severity] ?? 0;
     if (best === null || rank > (SEV_RANK[best.severity] ?? 0)) best = sig;
   }
@@ -208,7 +221,9 @@ export function classify(tool, signatures, policy) {
   // the mitigation actually applies.
   const MITIGABLE = new Set(['run-shell', 'destroy-data', 'exfiltrate']);
   if (finding.severity !== 'OK' && MITIGABLE.has(finding.signature)) {
-    const sandboxed = tool.sandboxed === true || detectSandbox(tool.body);
+    // A tool named/described as an e2b/Daytona/sandbox executor is confined even
+    // when we only have its JSON spec (no body to read the Sandbox.create call).
+    const sandboxed = tool.sandboxed === true || detectSandbox(tool.body) || detectSandbox(`${tool.name} ${tool.description}`);
     const gated = detectGate(tool.body);
     if (sandboxed || gated) {
       const reason = sandboxed ? 'runs inside a disposable sandbox' : 'guarded by an in-body confirmation';
