@@ -193,9 +193,15 @@ function extractCode(content, rel, out) {
     const n = (name || '').trim();
     if (!n) return;
     const line = lineAt(index);
-    // Body snippet: up to BODY_MAX_LINES lines following the definition line.
+    // Body snippet: up to BODY_MAX_LINES lines following the definition line,
+    // truncated at the next top-level definition so one tool's snippet never
+    // bleeds into its neighbour's body (and claims its evidence).
     const bodyLine = line + 1;
-    const body = lines.slice(bodyLine - 1, bodyLine - 1 + BODY_MAX_LINES).join('\n');
+    const raw = lines.slice(bodyLine - 1, bodyLine - 1 + BODY_MAX_LINES);
+    const boundary = raw.findIndex(
+      (l, i) => i > 0 && /^(?:@|(?:async\s+)?def |class |function |const |let |var |export )/.test(l),
+    );
+    const body = (boundary === -1 ? raw : raw.slice(0, boundary)).join('\n');
     const tool = { name: n, description: description || '', params: params || [], source: `${rel}:${line}` };
     if (body.trim()) {
       tool.body = body;

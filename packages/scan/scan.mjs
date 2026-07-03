@@ -23,6 +23,7 @@ import { loadPolicy, mergeSignatures } from './lib/policy.mjs';
 import { SIGNATURES } from './lib/signatures.mjs';
 import { classify } from './lib/classify.mjs';
 import { composePairs } from './lib/compose.mjs';
+import { llmScan } from './lib/llmScan.mjs';
 import { renderTerminal, renderJson, renderMarkdown } from './lib/report.mjs';
 import { initPolicy } from './lib/policyInit.mjs';
 
@@ -34,10 +35,11 @@ const SEVERITIES = new Set(Object.keys(SEV_RANK));
 // ---- tiny arg parser (zero deps) --------------------------------------------
 function parseArgs(argv) {
   const positional = [];
-  const flags = { json: false, markdown: false, policy: null, failOn: null };
+  const flags = { json: false, markdown: false, policy: null, failOn: null, llm: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') flags.json = true;
+    else if (a === '--llm') flags.llm = true;
     else if (a === '--markdown' || a === '--md') flags.markdown = true;
     else if (a === '--policy' || a === '-p') flags.policy = argv[++i] ?? null;
     else if (a === '--fail-on') flags.failOn = (argv[++i] ?? '').toUpperCase() || null;
@@ -51,7 +53,7 @@ function parseArgs(argv) {
 
 const USAGE = `mc scan — find what your agent can do on its own, before anyone can stop it.
 
-  scan <path> [--json | --markdown] [--policy <file>] [--fail-on <severity>]
+  scan <path> [--json | --markdown] [--policy <file>] [--fail-on <severity>] [--llm]
   scan init [<path>] [--policy <outfile>]
 
 <path> is a tool/function JSON file or a directory to search (default: .).
@@ -84,6 +86,18 @@ const signatures = mergeSignatures(SIGNATURES, policy);
 
 // Classify every tool, then run pairwise composition checks across the set.
 let findings = tools.map((t) => classify(t, signatures, policy));
+
+// Opt-in deep scan: send the AMBIGUOUS tools to the Anthropic API for a second
+// opinion. Only with --llm; the default scan sends nothing anywhere.
+if (flags.llm && !isInit) {
+  try {
+    findings = await llmScan(findings);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
+  }
+}
+
 const pairs = composePairs(findings);
 
 // ---- init subcommand: write the deny-by-default policy -----------------------

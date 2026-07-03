@@ -94,7 +94,7 @@ function heroPanel(f, style, pad) {
   const border = (s) => style(c, s);
 
   const content = [];
-  content.push(f.action || 'runs with no one checking it');
+  content.push((f.action || 'runs with no one checking it') + (f.assessedBy === 'llm' ? ' (LLM-assessed)' : ''));
   content.push('');
   if (f.resembles) {
     for (const l of wrapArr(`Resembles ${f.resembles.title}.`, W)) content.push(l);
@@ -342,7 +342,7 @@ export function renderMarkdown(findings, meta, pairs = []) {
       ? `${worst.resembles.title} (${worst.resembles.aid})`
       : 'a known agent incident';
     out.push(
-      `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'runs with no one checking it'} — resembles ${inc}.`,
+      `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'runs with no one checking it'}${worst.assessedBy === 'llm' ? ' (LLM-assessed)' : ''} — resembles ${inc}.`,
     );
     out.push('');
   }
