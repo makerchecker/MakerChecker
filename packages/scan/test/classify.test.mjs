@@ -75,6 +75,28 @@ test('resilient to malformed input: never throws', () => {
   assert.equal(f.severity, 'OK');
 });
 
+test('a bare "stock" noun is market data, not a purchase: get_stock_info(symbol) is OK', () => {
+  const t = { name: 'get_stock_info', description: '', params: ['symbol'], source: 'app.py:10' };
+  const f = classify(t, SIGNATURES, basePolicy);
+  assert.equal(f.severity, 'OK');
+  assert.equal(f.signature, null);
+});
+
+test('visualize_stock(symbol, api_key) does not match autonomous-spend', () => {
+  const t = { name: 'visualize_stock', description: '', params: ['symbol', 'api_key'], source: 'app.py:42' };
+  const f = classify(t, SIGNATURES, basePolicy);
+  assert.notEqual(f.signature, 'autonomous-spend');
+  assert.equal(f.severity, 'OK');
+});
+
+test('a confirmed spend still matches: buy verb in the name, price/quantity argHints', () => {
+  const strong = { name: 'buy_item', description: '', params: ['item_id'], source: 's' };
+  assert.equal(classify(strong, SIGNATURES, basePolicy).signature, 'autonomous-spend');
+  const hinted = { name: 'checkout_cart', description: 'Complete the purchase.', params: ['cart', 'price', 'quantity'], source: 's' };
+  const f = classify(hinted, SIGNATURES, basePolicy);
+  assert.notEqual(f.severity, 'OK');
+});
+
 test('highest-severity match wins when several signatures match', () => {
   // "exec" is a strong verb (CATASTROPHIC run-shell); a shell tool should be
   // CATASTROPHIC, not settle for a lower-severity match.
