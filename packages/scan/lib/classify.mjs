@@ -15,7 +15,7 @@
  * @typedef {import('./parse.mjs').Tool} Tool
  * @typedef {import('./policy.mjs').Policy} Policy
  * @typedef {{ kind: string, marker: string, line: number }} BodyEvidence
- * @typedef {{ tool: Tool, severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM'|'OK', signature: string|null, resembles: IncidentRef|null, control: Control|null, action: string|null, why: string|null, governedBy: { gate: Control, note: string }|null, evidence?: BodyEvidence[] }} Finding
+ * @typedef {{ tool: Tool, severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM'|'OK', signature: string|null, resembles: IncidentRef|null, control: Control|null, action: string|null, why: string|null, governedBy: { gate: Control, note: string }|null, evidence?: BodyEvidence[], mitigation?: { kind: 'sandbox'|'gate', note: string } }} Finding
  */
 
 const SEV_RANK = { OK: 0, MEDIUM: 1, HIGH: 2, CATASTROPHIC: 3 };
@@ -53,9 +53,15 @@ function makeMatcher(tool) {
  */
 function signatureMatches(sig, appears, nameLc) {
   const verbs = Array.isArray(sig?.verbs) ? sig.verbs : [];
-  if (!verbs.some(appears)) return false;
+  const matchedVerbs = verbs.filter(appears);
+  if (!matchedVerbs.length) return false;
+  // Distinct-token rule: the confirming argHint must be a DIFFERENT token than
+  // the one that satisfied the verb. A single word that lives in both lists
+  // (e.g. "price" as a bind-commitment verb AND argHint) is one signal, not two,
+  // so `getPrice` no longer self-confirms as a pricing commitment.
+  const matched = new Set(matchedVerbs.map(lc));
   const argHints = Array.isArray(sig?.argHints) ? sig.argHints : [];
-  if (argHints.some(appears)) return true;
+  if (argHints.some((a) => !matched.has(lc(a)) && appears(a))) return true;
   const strongVerbs = Array.isArray(sig?.strongVerbs) ? sig.strongVerbs : [];
   return strongVerbs.some((v) => nameLc.includes(lc(v)));
 }
@@ -79,6 +85,26 @@ const BODY_MARKERS = [
   { kind: 'write', sigId: 'destroy-data', severity: 'MEDIUM',
     re: /\bopen\s*\([^)\n]*['"][wa]b?['"]|\bwriteFileSync\b|\bfs\.writeFile\b|\bfs\.appendFile\b/ },
 ];
+
+// A dangerous action inside a disposable sandbox (an e2b cloud VM, a container,
+// a WASM/RestrictedPython interpreter) cannot touch the user's real systems —
+// a `rm -rf` there wipes a throwaway VM. When execution is demonstrably
+// sandboxed we downgrade and say so, rather than crying "deletes your home
+// directory" about a container. Marker in the tool body OR the surrounding file.
+const SANDBOX_RE = /\be2b\b|@e2b\/|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/;
+
+// An in-body human gate before the dangerous call: a confirm prompt, a yes/no,
+// an approval check. Conservative — cross-scope UI gates (an editor's
+// accept/reject) are out of a per-tool scanner's reach and NOT matched here.
+const GATE_RE = /\binput\s*\(|\bconfirm\b|yes_no|\bprompt\s*\(|are you sure|\bapprove\b|require.?confirm|click to (?:run|confirm|approve)|await .*\.confirm/i;
+
+export function detectSandbox(text) {
+  return SANDBOX_RE.test(String(text ?? ''));
+}
+
+export function detectGate(text) {
+  return GATE_RE.test(String(text ?? ''));
+}
 
 /**
  * Scan a body snippet for high-signal markers. Returns one evidence entry per
@@ -171,6 +197,25 @@ export function classify(tool, signatures, policy) {
           finding.why = sig.why ?? null;
         }
       }
+    }
+  }
+
+  // Sandbox / in-body gate: a dangerous action that can only reach a disposable
+  // sandbox, or that is guarded by a confirm prompt in its own body, is not the
+  // "wipes your real system" risk the incident implies. Downgrade one step and
+  // record why — never below MEDIUM (a sandbox escape or a skipped prompt is
+  // still worth a look), and only for the execution/destruction signatures where
+  // the mitigation actually applies.
+  const MITIGABLE = new Set(['run-shell', 'destroy-data', 'exfiltrate']);
+  if (finding.severity !== 'OK' && MITIGABLE.has(finding.signature)) {
+    const sandboxed = tool.sandboxed === true || detectSandbox(tool.body);
+    const gated = detectGate(tool.body);
+    if (sandboxed || gated) {
+      const reason = sandboxed ? 'runs inside a disposable sandbox' : 'guarded by an in-body confirmation';
+      const lowered = finding.severity === 'CATASTROPHIC' ? 'HIGH' : 'MEDIUM';
+      finding.mitigation = { kind: sandboxed ? 'sandbox' : 'gate', note: reason };
+      finding.severity = lowered;
+      finding.action = `${finding.action || 'runs with no one checking it'} — but ${reason}`;
     }
   }
 

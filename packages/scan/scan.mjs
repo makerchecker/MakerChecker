@@ -167,6 +167,11 @@ if (flags.json) {
 }
 
 // ---- exit code: gate CI on --fail-on / policy.failOn -------------------------
+// Set exitCode rather than calling process.exit(): the report we just wrote may
+// be hundreds of KB of JSON, and process.exit() truncates unflushed stdout when
+// it is a pipe (a CI step, `| jq`, a batch runner). Letting the event loop drain
+// naturally guarantees the full report reaches the consumer, then we exit with
+// the gate's code.
 const failRank = SEV_RANK[failOn] ?? SEV_RANK.CATASTROPHIC;
 const tripped = findings.some((f) => !f.governedBy && (SEV_RANK[f.severity] ?? 0) >= failRank && f.severity !== 'OK');
-process.exit(tripped ? 1 : 0);
+process.exitCode = tripped ? 1 : 0;
