@@ -1,0 +1,46 @@
+# Ready-to-copy GitHub Actions workflow for mc scan.
+#
+# Copy this file to .github/workflows/mc-scan.yml in your repo, set `path:` to
+# where your agent's tool/function definitions live, and commit. The scan runs
+# read-only on every push and pull request and FAILS THE BUILD if your agent has
+# a CATASTROPHIC capability that no gate protects.
+#
+# To turn a red build green: run `npx @makerchecker/scan init <path>` locally,
+# review the generated deny-by-default mc-policy.json, and commit it. That same
+# file is what the self-hosted MakerChecker engine enforces in production.
+
+name: mc scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the scan only needs to read your code.
+permissions:
+  contents: read
+
+jobs:
+  mc-scan:
+    name: agent capability scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Option A — the composite action (recommended):
+      - name: mc scan
+        uses: makerchecker/scan@v0
+        with:
+          path: .                 # <-- point this at your tool/function definitions
+          fail-on: CATASTROPHIC   # fail the build on ungoverned catastrophic tools
+          # policy: mc-policy.json  # uncomment to pin an explicit policy file
+
+      # Option B — no action, just npx (uncomment to use instead of Option A):
+      # - name: mc scan
+      #   run: npx --yes @makerchecker/scan . --fail-on CATASTROPHIC

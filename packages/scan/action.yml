@@ -1,0 +1,79 @@
+# mc scan — GitHub Action
+#
+# Runs `mc scan` (read-only, zero-dependency) over your agent's tool definitions
+# and FAILS THE BUILD when it finds a CATASTROPHIC, ungoverned capability: an
+# irreversible action with a wide blast radius that no gate protects.
+#
+# Nothing leaves the runner. No signup, no server, no telemetry. It runs the same
+# open-source CLI you run locally, via npx, with nothing to install.
+#
+# The fix for a finding is a deny-by-default mc-policy.json (generate it with
+# `npx @makerchecker/scan init`). Commit that file and the same scan turns green —
+# and the self-hosted MakerChecker engine enforces that exact file in production.
+#
+# Usage (see .github-workflow-template.yml for a full workflow):
+#
+#   - uses: makerchecker/scan@v0
+#     with:
+#       path: ./tools           # file or dir of tool/function definitions
+#       fail-on: CATASTROPHIC   # severity that fails the build
+#       policy: mc-policy.json  # optional explicit policy file
+
+name: 'mc scan'
+description: "See what your AI agent can do that you can't undo, and fail CI on ungoverned catastrophic tools."
+author: 'MakerChecker'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  path:
+    description: 'File or directory of agent tool/function definitions to scan.'
+    required: false
+    default: '.'
+  fail-on:
+    description: 'Severity at or above which the build fails (CATASTROPHIC | HIGH | MEDIUM | OK). Governed and OK tools are excluded.'
+    required: false
+    default: 'CATASTROPHIC'
+  policy:
+    description: 'Optional path to an mc-policy.json to scan against. If omitted, the nearest mc-policy.json up the tree is used.'
+    required: false
+    default: ''
+  version:
+    description: 'Version (npm dist-tag or exact version) of @makerchecker/scan to run.'
+    required: false
+    default: 'latest'
+  markdown-summary:
+    description: 'Write a Markdown results card to the GitHub Step Summary.'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: mc scan
+      shell: bash
+      env:
+        MC_PATH: ${{ inputs.path }}
+        MC_FAIL_ON: ${{ inputs.fail-on }}
+        MC_POLICY: ${{ inputs.policy }}
+        MC_VERSION: ${{ inputs.version }}
+        MC_MARKDOWN: ${{ inputs.markdown-summary }}
+      run: |
+        set -euo pipefail
+
+        policy_args=()
+        if [ -n "${MC_POLICY}" ]; then
+          policy_args=(--policy "${MC_POLICY}")
+        fi
+
+        # Optional shareable Markdown card in the job summary (never fails the build).
+        if [ "${MC_MARKDOWN}" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          npx --yes "@makerchecker/scan@${MC_VERSION}" "${MC_PATH}" \
+            "${policy_args[@]}" --markdown >> "${GITHUB_STEP_SUMMARY}" || true
+        fi
+
+        # The gating run. Exits non-zero at/above --fail-on; that fails the step.
+        npx --yes "@makerchecker/scan@${MC_VERSION}" "${MC_PATH}" \
+          "${policy_args[@]}" --fail-on "${MC_FAIL_ON}"

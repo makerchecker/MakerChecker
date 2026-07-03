@@ -4,155 +4,153 @@
 //
 // Read-only. No signup, no server, no telemetry. Nothing leaves your machine.
 //
-//   npx @makerchecker/scan <path>
+//   npx @makerchecker/scan <path>                 scan a tools.json or a directory
+//   npx @makerchecker/scan <path> --json          machine-readable output
+//   npx @makerchecker/scan <path> --markdown      a shareable results card
+//   npx @makerchecker/scan <path> --policy p.json  scan against a policy file
+//   npx @makerchecker/scan <path> --fail-on high  exit non-zero at/above severity
+//   npx @makerchecker/scan init [<path>]          write a deny-by-default mc-policy.json
 //
-// <path> is a JSON file of tool/function definitions, or a directory to search.
-// Supports OpenAI function/tools schemas, MCP tools/list output, LangChain tool
-// dumps, and bare arrays of { name, description, parameters }.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
-import { SIGNATURES } from './signatures.mjs';
+// This file is the FIXED CLI wiring. It imports the six lib modules by their exact
+// names and wires parse -> loadPolicy -> classify -> report (or initPolicy). The
+// lib module bodies are implemented separately against CONTRACTS.md; do not change
+// the imports or the pipeline here.
+import { writeFileSync, statSync } from 'node:fs';
+import { resolve, dirname, relative } from 'node:path';
 
-const C = process.stdout.isTTY
-  ? { red: (s) => `\x1b[1;31m${s}\x1b[0m`, yellow: (s) => `\x1b[33m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, bold: (s) => `\x1b[1m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
-  : { red: (s) => s, yellow: (s) => s, dim: (s) => s, bold: (s) => s, green: (s) => s };
+import { parseTools } from './lib/parse.mjs';
+import { loadPolicy, mergeSignatures } from './lib/policy.mjs';
+import { SIGNATURES } from './lib/signatures.mjs';
+import { classify } from './lib/classify.mjs';
+import { renderTerminal, renderJson, renderMarkdown } from './lib/report.mjs';
+import { initPolicy } from './lib/policyInit.mjs';
 
-const SEV_RANK = { CATASTROPHIC: 3, HIGH: 2, MEDIUM: 1, OK: 0 };
+const SCAN_VERSION = '0.2.0';
+const CORPUS_SIZE = 41; // incidents in the Agent Incident Database
+const SEV_RANK = { OK: 0, MEDIUM: 1, HIGH: 2, CATASTROPHIC: 3 };
+const SEVERITIES = new Set(Object.keys(SEV_RANK));
 
-// ---- extract tool definitions from whatever shape the input is in ----
-function toolsFromJson(data) {
-  const out = [];
-  const push = (name, description, params) => {
-    if (typeof name === 'string' && name.trim()) out.push({ name, description: description || '', params: paramNames(params) });
-  };
-  const walk = (node) => {
-    if (Array.isArray(node)) return node.forEach(walk);
-    if (!node || typeof node !== 'object') return;
-    // OpenAI: { type:'function', function:{ name, description, parameters } }
-    if (node.function && typeof node.function === 'object') return push(node.function.name, node.function.description, node.function.parameters);
-    // MCP: { name, description, inputSchema }
-    if (node.name && (node.inputSchema || node.parameters || node.description !== undefined)) {
-      return push(node.name, node.description, node.inputSchema || node.parameters);
-    }
-    // { tools: [...] } or nested containers
-    for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v);
-  };
-  walk(data);
-  // de-dupe by name
-  const seen = new Set();
-  return out.filter((t) => (seen.has(t.name) ? false : seen.add(t.name)));
-}
-
-function paramNames(schema) {
-  if (!schema || typeof schema !== 'object') return [];
-  const props = schema.properties || (schema.type === 'object' ? {} : null);
-  return props ? Object.keys(props) : [];
-}
-
-function findJsonFiles(path) {
-  const st = statSync(path);
-  if (st.isFile()) return extname(path) === '.json' ? [path] : [];
-  const out = [];
-  for (const name of readdirSync(path)) {
-    if (name === 'node_modules' || name.startsWith('.')) continue;
-    const p = join(path, name);
-    try {
-      const s = statSync(p);
-      if (s.isDirectory()) out.push(...findJsonFiles(p));
-      else if (extname(p) === '.json') out.push(p);
-    } catch { /* skip unreadable */ }
+// ---- tiny arg parser (zero deps) --------------------------------------------
+function parseArgs(argv) {
+  const positional = [];
+  const flags = { json: false, markdown: false, policy: null, failOn: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--json') flags.json = true;
+    else if (a === '--markdown' || a === '--md') flags.markdown = true;
+    else if (a === '--policy' || a === '-p') flags.policy = argv[++i] ?? null;
+    else if (a === '--fail-on') flags.failOn = (argv[++i] ?? '').toUpperCase() || null;
+    else if (a === '-h' || a === '--help') flags.help = true;
+    else if (a === '--version' || a === '-v') flags.version = true;
+    else if (a.startsWith('-')) { /* unknown flag: ignore, stay resilient */ }
+    else positional.push(a);
   }
-  return out;
+  return { positional, flags };
 }
 
-// ---- classify a tool against the corpus signatures ----
-function classify(tool) {
-  const hay = `${tool.name} ${tool.description} ${tool.params.join(' ')}`.toLowerCase();
-  const tokens = hay.split(/[^a-z0-9]+/).filter(Boolean);
-  const tokenSet = new Set(tokens);
-  let best = null;
-  for (const sig of SIGNATURES) {
-    const verbHit = sig.verbs.some((v) => tokenSet.has(v) || tool.name.toLowerCase().includes(v));
-    if (!verbHit) continue;
-    const argHit = (sig.argHints || []).some((a) => tokenSet.has(a) || hay.includes(a));
-    // require an arg/context hint for MEDIUM-ish verbs to cut false positives on
-    // generic words like "get"/"read"; strong destructive verbs match on verb alone.
-    const strongVerb = ['delete', 'drop', 'destroy', 'wipe', 'truncate', 'force-push', 'pay', 'transfer', 'wire', 'withdraw', 'terraform'].some((v) => tool.name.toLowerCase().includes(v));
-    if (!argHit && !strongVerb) continue;
-    if (!best || SEV_RANK[sig.severity] > SEV_RANK[best.severity]) best = sig;
+const USAGE = `mc scan — see what your AI agent can do that you can't undo.
+
+  scan <path> [--json | --markdown] [--policy <file>] [--fail-on <severity>]
+  scan init [<path>] [--policy <outfile>]
+
+<path> is a tool/function JSON file or a directory to search (default: .).
+Read-only. Nothing leaves your machine.`;
+
+// ---- run --------------------------------------------------------------------
+const { positional, flags } = parseArgs(process.argv.slice(2));
+
+if (flags.version) { console.log(SCAN_VERSION); process.exit(0); }
+if (flags.help) { console.log(USAGE); process.exit(0); }
+
+const isInit = positional[0] === 'init';
+const target = (isInit ? positional[1] : positional[0]) || '.';
+
+// Resolve the directory to anchor policy lookup from (file -> its dir).
+function anchorDir(p) {
+  const abs = resolve(p);
+  try { return statSync(abs).isDirectory() ? abs : dirname(abs); }
+  catch { return dirname(abs); }
+}
+
+// Parse tools (read-only, resilient — never throws on junk).
+let tools = [];
+try { tools = parseTools(resolve(target)); }
+catch (e) { console.error(`cannot read ${target}: ${e.message}`); process.exit(2); }
+
+// Load policy (explicit --policy wins on scan; on init it is the OUTPUT path).
+const policy = loadPolicy(anchorDir(target), isInit ? undefined : (flags.policy || undefined));
+const signatures = mergeSignatures(SIGNATURES, policy);
+
+// Classify every tool.
+const findings = tools.map((t) => classify(t, signatures, policy));
+
+// ---- init subcommand: write the deny-by-default policy -----------------------
+if (isInit) {
+  const outPath = resolve(flags.policy || 'mc-policy.json');
+  const policyObj = initPolicy(findings);
+  try {
+    writeFileSync(outPath, JSON.stringify(policyObj, null, 2) + '\n');
+  } catch (e) {
+    console.error(`could not write ${outPath}: ${e.message}`);
+    process.exit(2);
   }
-  return best;
-}
-
-// ---- run ----
-const target = process.argv[2];
-if (!target) {
-  console.error('usage: npx @makerchecker/scan <path-to-tools.json | directory>');
-  process.exit(2);
-}
-
-let files;
-try { files = findJsonFiles(target); } catch (e) { console.error(`cannot read ${target}: ${e.message}`); process.exit(2); }
-
-const tools = [];
-for (const f of files) {
-  try { tools.push(...toolsFromJson(JSON.parse(readFileSync(f, 'utf8')))); } catch { /* not tool JSON, skip */ }
-}
-
-if (tools.length === 0) {
-  console.log(C.dim(`No agent tool definitions found in ${target}.`));
-  console.log(C.dim('Point mc scan at a JSON file of function/tool definitions, or a directory containing one.'));
+  const gated = Object.keys(policyObj.allow || {}).length;
+  console.log('');
+  console.log(`Wrote ${relative(process.cwd(), outPath) || outPath} — a deny-by-default policy.`);
+  console.log(`  ${gated} irreversible tool(s) now require a gate before they can run.`);
+  console.log('');
+  console.log('This file is both the scan config and the governance policy.');
+  console.log('The free scan generated it; the self-hosted MakerChecker engine enforces');
+  console.log('this exact file in production, with an audit trail a regulator can verify.');
+  console.log('Edit `allow`/`ignore`, then commit it next to your agent.');
+  console.log('');
   process.exit(0);
 }
 
-const findings = tools
-  .map((t) => ({ tool: t, sig: classify(t) }))
-  .map((f) => ({ ...f, severity: f.sig ? f.sig.severity : 'OK' }))
-  .sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]);
-
-const counts = { CATASTROPHIC: 0, HIGH: 0, MEDIUM: 0, OK: 0 };
-for (const f of findings) counts[f.severity]++;
-
-console.log('');
-console.log(C.bold(`mc scan  ·  ${tools.length} tools  ·  ${files.length} file(s)`));
-console.log(C.dim('read-only, nothing left your machine'));
-console.log('');
-
-// The red panel: the worst finding, told against the real incident.
-const worst = findings.find((f) => f.severity === 'CATASTROPHIC') || findings.find((f) => f.severity === 'HIGH');
-if (worst && worst.sig) {
-  const tag = worst.severity === 'CATASTROPHIC' ? C.red('CATASTROPHIC') : C.yellow('HIGH');
-  console.log(`  ${tag} — ${C.bold(worst.tool.name)}`);
-  console.log(`  ${C.dim('This tool ' + worst.sig.action + '.')}`);
-  console.log(`  ${C.dim('Resembles ' + worst.sig.resembles.title + '')}`);
-  console.log(`  ${C.dim('(' + worst.sig.resembles.aid + ' in the Agent Incident Database).')}`);
-  console.log('');
-  console.log(`  ${worst.sig.why}`);
-  console.log('');
-  console.log(`  ${C.green('Fix:')} gate it with ${C.bold('mc policy init')} (generates a deny-by-default ${worst.sig.control} rule).`);
-  console.log('');
-  console.log(C.dim('  ────────────────────────────────────────────────────────────'));
-  console.log('');
-}
-
-// The inventory.
+// ---- tally -------------------------------------------------------------------
+const emptyCounts = () => ({ CATASTROPHIC: 0, HIGH: 0, MEDIUM: 0, OK: 0, GOVERNED: 0 });
+const counts = emptyCounts();
 for (const f of findings) {
-  if (f.severity === 'OK') continue;
-  const tag = f.severity === 'CATASTROPHIC' ? C.red('CATASTROPHIC') : f.severity === 'HIGH' ? C.yellow('HIGH    ') : C.dim('MEDIUM  ');
-  console.log(`  ${tag}  ${f.tool.name.padEnd(28)} ${C.dim(f.sig.action)}`);
+  counts[f.severity] = (counts[f.severity] ?? 0) + 1;
+  if (f.governedBy) counts.GOVERNED++;
 }
-const okCount = counts.OK;
-if (okCount) console.log(`  ${C.green('OK       ')}  ${C.dim(okCount + ' reversible tool(s), not flagged')}`);
-console.log('');
-console.log(C.bold(`  ${counts.CATASTROPHIC} catastrophic, ${counts.HIGH} high, ${counts.MEDIUM} medium.`));
-console.log('');
-console.log(C.dim('  Every finding is named against a real, sourced incident:'));
-console.log(C.dim('  https://github.com/sammysltd/makerchecker/tree/main/incidents'));
-console.log('');
-console.log(C.dim("  What this won't catch: runtime grants (it reads tool definitions, not"));
-console.log(C.dim('  your live policy), prompt-injection in your data, or logic bugs. It'));
-console.log(C.dim('  finds the actions your agent CAN take that it cannot take back.'));
-console.log('');
 
-// exit non-zero if anything catastrophic, so it can gate CI.
-process.exit(counts.CATASTROPHIC > 0 ? 1 : 0);
+const failOn = (flags.failOn && SEVERITIES.has(flags.failOn))
+  ? flags.failOn
+  : (policy.failOn || 'CATASTROPHIC');
+
+const sourceCount = new Set(tools.map((t) => String(t.source || '').split(':')[0]).filter(Boolean)).size;
+
+const meta = {
+  target,
+  toolCount: findings.length,
+  sourceCount,
+  counts,
+  policyPath: policy.path || null,
+  failOn,
+  scanVersion: SCAN_VERSION,
+  corpusSize: CORPUS_SIZE,
+  generatedAt: new Date().toISOString(),
+};
+
+// ---- no tools found ----------------------------------------------------------
+if (tools.length === 0) {
+  if (flags.json) { console.log(JSON.stringify({ meta, findings: [], counts }, null, 2)); process.exit(0); }
+  console.log(`No agent tool definitions found in ${target}.`);
+  console.log('Point mc scan at a JSON file of function/tool definitions, or a directory containing one.');
+  process.exit(0);
+}
+
+// ---- report ------------------------------------------------------------------
+if (flags.json) {
+  console.log(JSON.stringify(renderJson(findings, meta), null, 2));
+} else if (flags.markdown) {
+  console.log(renderMarkdown(findings, meta));
+} else {
+  console.log(renderTerminal(findings, meta));
+}
+
+// ---- exit code: gate CI on --fail-on / policy.failOn -------------------------
+const failRank = SEV_RANK[failOn] ?? SEV_RANK.CATASTROPHIC;
+const tripped = findings.some((f) => !f.governedBy && (SEV_RANK[f.severity] ?? 0) >= failRank && f.severity !== 'OK');
+process.exit(tripped ? 1 : 0);

@@ -1,0 +1,25 @@
+{
+  "tools": [
+    {
+      "name": "wire_transfer",
+      "description": "Move money between two bank accounts",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "number" },
+          "to_account": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "read_ledger",
+      "description": "Read entries from the ledger",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account": { "type": "string" }
+        }
+      }
+    }
+  ]
+}
