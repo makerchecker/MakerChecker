@@ -53,6 +53,16 @@ const NAME_SUPPRESSIBLE = new Set([
   'send-message', 'destroy-data', 'run-shell', 'commit-decision',
 ]);
 
+// Signatures where a model-chosen amount/recipient turns the finding into a
+// concrete, demonstrable bug (not just an ungated capability).
+const MODEL_CONTROLLED_SIGS = new Set([
+  'autonomous-spend', 'move-money', 'execute-trade', 'bind-commitment', 'send-message',
+]);
+// A parameter that names a MONETARY / quantity value the model fills in freely.
+const VALUE_PARAM_RE = /^(amount|amt|price|total|subtotal|sum|cost|fee|value|balance|qty|quantity|units|shares|notional|refund_amount|charge_amount|transfer_amount|payment_amount|withdraw(al)?_amount)$/;
+// A parameter that names the DESTINATION / identity the money or message goes to.
+const TARGET_PARAM_RE = /^(recipient|to|to_account|dest|destination|account|account_id|account_number|iban|routing|card|card_number|wallet|wallet_address|payee|beneficiary|address)$/;
+
 /**
  * Build a matcher closure over one tool. A term "appears" when it is a whole
  * TOKEN of the tool name (camelCase/snake/kebab-aware) — so `deleteFile` matches
@@ -257,6 +267,28 @@ export function classify(tool, signatures, policy) {
       finding.mitigation = { kind: sandboxed ? 'sandbox' : 'gate', note: reason };
       finding.severity = lowered;
       finding.action = `${finding.action || 'runs with no one checking it'} — but ${reason}`;
+    }
+  }
+
+  // Model-controlled value: an action tool whose OWN PARAMETERS include the
+  // amount/recipient/identity means the LLM fills that value in freely — a prompt
+  // injection or a hallucination sets it to anything. This is the difference
+  // between a design observation ("this agent can refund") and a concrete bug
+  // ("this agent refunds an ATTACKER-CHOSEN amount to an ATTACKER-CHOSEN account").
+  // We flag it, not re-rank it: it's what turns a finding into a repro.
+  if (MODEL_CONTROLLED_SIGS.has(finding.signature) && Array.isArray(tool.params)) {
+    const params = tool.params.map(lc);
+    const value = params.find((p) => VALUE_PARAM_RE.test(p));
+    const target = params.find((p) => TARGET_PARAM_RE.test(p));
+    const hit = value || target;
+    if (hit) {
+      finding.modelControlled = {
+        param: hit,
+        kind: value ? 'value' : 'target',
+        note: value
+          ? `the "${value}" is a free parameter — the model chooses how much`
+          : `the "${target}" is a free parameter — the model chooses the destination`,
+      };
     }
   }
 

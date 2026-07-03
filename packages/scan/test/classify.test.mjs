@@ -82,6 +82,25 @@ test('genuine refund/exfil tools survive the leading-verb guard', () => {
   assert.equal(exfil.signature, 'exfiltrate'); // read IS the risk here — not suppressed
 });
 
+// Model-controlled value: a free amount/recipient parameter turns a finding into
+// a concrete bug and is flagged as such.
+test('a model-chosen amount is flagged as model-controlled', () => {
+  const f = classify({ name: 'issue_refund', description: 'Refund an order', params: ['order_id', 'amount'], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.ok(f.modelControlled, 'expected modelControlled to be set');
+  assert.equal(f.modelControlled.param, 'amount');
+  assert.equal(f.modelControlled.kind, 'value');
+});
+test('a model-chosen recipient is flagged as a target', () => {
+  const f = classify({ name: 'send_email', description: 'Send an email', params: ['recipient', 'body'], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.equal(f.signature, 'send-message');
+  assert.ok(f.modelControlled);
+  assert.equal(f.modelControlled.kind, 'target');
+});
+test('no model-controlled flag when the value is not a parameter', () => {
+  const f = classify({ name: 'issue_refund', description: 'Refund an order', params: ['order_id'], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.equal(f.modelControlled, undefined);
+});
+
 // ...but the real thing still fires: a distinct commerce/audience signal present.
 test('genuine spend / commitment / message tools still classify HIGH', () => {
   const buy = classify({ name: 'restock_item', description: 'Purchase inventory from a supplier', params: ['sku', 'quantity'], source: 'x.json' }, SIGNATURES, basePolicy);

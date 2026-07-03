@@ -91,7 +91,11 @@ export const SIGNATURES = [
     id: 'move-money',
     category: 'unauthorized-financial-action',
     verbs: ['pay', 'transfer', 'wire', 'send', 'withdraw', 'charge', 'refund', 'swap', 'payout', 'remit', 'disburse', 'approvetransfer'],
-    argHints: ['amount', 'usd', 'eth', 'btc', 'wallet', 'account', 'card', 'invoice', 'price', 'notional', 'balance', 'iban', 'recipient', 'payee', 'token', 'address', 'sum'],
+    // Money-SPECIFIC hints only: 'recipient'/'token'/'address' were dropped because
+    // an email recipient, an auth token, and an IP/email address are not payments —
+    // they pulled send_email/notify tools into a wire-transfer finding. 'wallet',
+    // 'iban', 'payee' remain as unambiguous money destinations.
+    argHints: ['amount', 'usd', 'eth', 'btc', 'wallet', 'account', 'card', 'invoice', 'notional', 'balance', 'iban', 'payee', 'sum'],
     strongVerbs: ['wire', 'withdraw', 'payout', 'remit', 'disburse'],
     severity: 'CATASTROPHIC',
     action: 'moves money out of your control',
