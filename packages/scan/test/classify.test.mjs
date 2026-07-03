@@ -67,6 +67,21 @@ test('real shell tools still classify CATASTROPHIC', () => {
   }
 });
 
+// Leading read/negation verb suppresses a write/spend match; the exfil exception
+// and the genuine money-movers survive.
+test('leading read/negation verb suppresses false money-mover matches', () => {
+  for (const name of ['get_refund_policy', 'check_refund_eligibility', 'deny_refund', 'get_customer']) {
+    const f = classify({ name, description: '', params: [], source: 'x.py' }, SIGNATURES, basePolicy);
+    assert.equal(f.severity, 'OK', `${name} should be OK`);
+  }
+});
+test('genuine refund/exfil tools survive the leading-verb guard', () => {
+  const spend = classify({ name: 'issue_refund', description: '', params: ['order_id'], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.equal(spend.signature, 'autonomous-spend');
+  const exfil = classify({ name: 'get_customer_order_history', description: '', params: [], source: 'x.py' }, SIGNATURES, basePolicy);
+  assert.equal(exfil.signature, 'exfiltrate'); // read IS the risk here — not suppressed
+});
+
 // ...but the real thing still fires: a distinct commerce/audience signal present.
 test('genuine spend / commitment / message tools still classify HIGH', () => {
   const buy = classify({ name: 'restock_item', description: 'Purchase inventory from a supplier', params: ['sku', 'quantity'], source: 'x.json' }, SIGNATURES, basePolicy);

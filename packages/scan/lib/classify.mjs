@@ -28,10 +28,30 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // [patronus, eval, tool], "get_stock_info" -> [get, stock, info]. This is what
 // lets us match a verb as a WORD in the name without the substring collisions
 // that made "eval" fire on "retrieval"/"evaluator" and "system" on "ecosystem".
-function nameTokens(name) {
+function nameTokenList(name) {
   const raw = String(name ?? '').match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+|[0-9]+/g) || [];
-  return new Set(raw.map((t) => t.toLowerCase()));
+  return raw.map((t) => t.toLowerCase());
 }
+function nameTokens(name) {
+  return new Set(nameTokenList(name));
+}
+
+// A tool whose LEADING name token is a read or negation verb does not perform
+// the write/spend/message its later tokens hint at: get_refund_policy READS a
+// policy, check_refund_eligibility EVALUATES one, deny_refund records a DENIAL —
+// none move money. Exfiltrate is the deliberate exception: a read IS the risk
+// there, so a leading "get"/"fetch" must not suppress it.
+const READ_LEAD = new Set([
+  'get', 'fetch', 'read', 'view', 'list', 'search', 'query', 'find', 'lookup',
+  'retrieve', 'load', 'describe', 'show', 'count', 'is', 'has', 'can', 'should',
+  'check', 'validate', 'verify', 'inspect', 'calculate', 'estimate', 'evaluate',
+  'preview', 'summarize', 'analyze', 'classify', 'detect',
+  'deny', 'reject', 'decline', 'refuse',
+]);
+const NAME_SUPPRESSIBLE = new Set([
+  'autonomous-spend', 'move-money', 'execute-trade', 'bind-commitment',
+  'send-message', 'destroy-data', 'run-shell', 'commit-decision',
+]);
 
 /**
  * Build a matcher closure over one tool. A term "appears" when it is a whole
@@ -169,11 +189,17 @@ export function classify(tool, signatures, policy) {
 
   // Find the highest-severity matching signature (first match wins on ties).
   const appears = makeMatcher(tool);
-  const tokens = nameTokens(toolName);
+  const tokenList = nameTokenList(toolName);
+  const tokens = new Set(tokenList);
+  const lead = tokenList[0] || '';
   const sigs = Array.isArray(signatures) ? signatures : [];
   let best = null;
   for (const sig of sigs) {
     if (!sig || !signatureMatches(sig, appears, tokens)) continue;
+    // Leading read/negation verb: the name-based match is a false positive for a
+    // write/spend signature (body evidence below can still re-raise it if the
+    // function actually acts). Skip it and let a lower-severity or OK match stand.
+    if (READ_LEAD.has(lead) && NAME_SUPPRESSIBLE.has(sig.id)) continue;
     const rank = SEV_RANK[sig.severity] ?? 0;
     if (best === null || rank > (SEV_RANK[best.severity] ?? 0)) best = sig;
   }
