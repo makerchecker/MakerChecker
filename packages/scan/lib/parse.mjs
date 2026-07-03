@@ -42,7 +42,7 @@ function isTestFile(name) {
   const n = name.toLowerCase();
   if (n === 'conftest.py') return true;
   if (/^test_.*\.py$/.test(n) || /_test\.py$/.test(n)) return true;
-  if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(n)) return true;
+  if (/\.(test|spec|vitest|e2e|stories|bench)\.[cm]?[jt]sx?$/.test(n)) return true;
   return false;
 }
 
@@ -130,6 +130,7 @@ function collectFromFile(file, rel, out) {
 
   const ext = extname(file).toLowerCase();
   if (ext === '.json') {
+    if (isNonToolJson(file)) return; // package.json, tsconfig, lockfiles, grammars...
     let data;
     try {
       data = JSON.parse(content);
@@ -140,6 +141,27 @@ function collectFromFile(file, rel, out) {
   } else if (CODE_EXT.has(ext)) {
     extractCode(content, rel, out);
   }
+}
+
+// Well-known JSON files that carry a top-level `name`/`description` but are NOT
+// agent tools — package manifests, lockfiles, tsconfigs, TextMate grammars,
+// linter configs. Left unfiltered, a package.json named "@calcom/btcpayserver"
+// reads as a money-moving tool. This is the single biggest false-positive
+// source when scanning a real repo.
+const NON_TOOL_JSON = new Set([
+  'package.json', 'package-lock.json', 'tsconfig.json', 'jsconfig.json',
+  'composer.json', 'composer.lock', 'manifest.json', 'bower.json',
+  'lerna.json', 'nx.json', 'turbo.json', 'renovate.json', 'now.json',
+  'vercel.json', 'angular.json', 'firebase.json', 'app.json',
+]);
+function isNonToolJson(file) {
+  const b = basename(file).toLowerCase();
+  if (NON_TOOL_JSON.has(b)) return true;
+  if (b.endsWith('.tmlanguage.json')) return true; // TextMate grammars
+  if (b.startsWith('tsconfig.') && b.endsWith('.json')) return true;
+  if (b.startsWith('.eslintrc') || b.startsWith('.prettierrc') || b.startsWith('.babelrc')) return true;
+  if (b.endsWith('.code-workspace')) return true;
+  return false;
 }
 
 // ---- JSON extraction --------------------------------------------------------
@@ -166,24 +188,44 @@ function extractJson(data, source, out) {
   }
   if (found) return;
 
-  // Otherwise treat the object itself as a single tool / function wrapper.
-  itemToTool(data, source, out);
+  // Otherwise the object is not inside a tools/functions container. Treat it as
+  // a tool ONLY if it is actually tool-SHAPED — a function schema (parameters /
+  // inputSchema / ...) or an OpenAI function wrapper. A bare { name, description }
+  // with no schema is a manifest, a config, a marketplace listing — not a tool.
+  itemToTool(data, source, out, { requireSchema: true });
 }
 
-function itemToTool(item, source, out) {
+// Fields that make an object a function/tool definition rather than a named blob.
+const SCHEMA_KEYS = ['parameters', 'inputSchema', 'input_schema', 'args_schema', 'schema'];
+
+function itemToTool(item, source, out, { requireSchema = false } = {}) {
   if (!item || typeof item !== 'object') return;
 
   // Unwrap OpenAI { type:'function', function:{...} } and { function:{...} }.
   let obj = item;
+  let wrapped = false;
   if (item.function && typeof item.function === 'object' && typeof item.function.name === 'string') {
     obj = item.function;
+    wrapped = true;
   }
 
   const name = typeof obj.name === 'string' ? obj.name.trim() : '';
   if (!name) return;
 
+  // Agent / workflow GRAPH, not a tool: a node-and-link graph (AutoGPT agent
+  // export, LangGraph, flow builders) has a `name` and an `input_schema` but its
+  // name is marketing copy ("Lead Finder"), never a capability. Skip it — scoring
+  // the graph's name as a tool is how "Lead Finder" read as a money-mover.
+  if (Array.isArray(obj.nodes) && (Array.isArray(obj.links) || Array.isArray(obj.edges) || Array.isArray(obj.sub_graphs))) {
+    return;
+  }
+
+  const schema = SCHEMA_KEYS.map((k) => obj[k]).find((v) => v && typeof v === 'object');
+  // A lone object (not in a tools/functions container) must prove it is a tool:
+  // an explicit schema field, or an OpenAI function wrapper. Otherwise skip it.
+  if (requireSchema && !schema && !wrapped) return;
+
   const description = typeof obj.description === 'string' ? obj.description : '';
-  const schema = obj.parameters || obj.inputSchema || obj.input_schema || obj.args_schema || obj.schema;
   out.push({ name, description, params: schemaParamNames(schema), source });
 }
 
@@ -205,7 +247,7 @@ const BODY_MAX_LINES = 60;
 // Disposable-execution markers: if a file stands up an e2b sandbox, a container,
 // or a WASM/RestrictedPython interpreter, code the agent runs is confined to it.
 // Kept in sync with classify.mjs SANDBOX_RE.
-const SANDBOX_RE = /\be2b\b|@e2b\/|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/;
+const SANDBOX_RE = /\be2b|@e2b\/|\bdaytona|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/i;
 
 function extractCode(content, rel, out) {
   const lineAt = makeLineAt(content);
@@ -318,8 +360,12 @@ function objectLiteralTools(content, push) {
   while ((m = re.exec(content))) {
     const obj = enclosingObject(content, m.index);
     if (!obj) continue;
-    // Require a tool-shaped sibling key to avoid matching arbitrary objects.
-    if (!/\b(description|parameters|inputSchema|input_schema|schema)\b/.test(obj.text)) continue;
+    // Require a FUNCTION-shaped sibling: a parameter schema or a callable
+    // handler. `description` alone is far too weak — React form fields, app
+    // metadata (name+description+category), and settings schemas all carry a
+    // name and a description without being agent tools. This is the dominant
+    // false-positive source in application repos.
+    if (!/\b(parameters|inputSchema|input_schema|args_schema|schema|func|function|handler|execute|invoke|run_tool|_run|call)\b/.test(obj.text)) continue;
     const name = m[2];
     const description = kwString(obj.text, 'description') || '';
     push(name, description, schemaKeys(obj.text), obj.start);

@@ -47,6 +47,26 @@ for (const tool of readOnlyDecoys) {
   });
 }
 
+// Token-matching regressions: a verb must be a whole NAME TOKEN, not a
+// substring, so these camelCase/snake names no longer collide with shell/exec.
+const substringDecoys = ['RevenueRetrieval', 'PatronusEvalTool', 'get_ecosystem_status', 'MedievalHistoryTool'];
+for (const name of substringDecoys) {
+  test(`substring decoy "${name}" does not match run-shell`, () => {
+    const f = classify({ name, description: '', params: [], source: 'x.json' }, SIGNATURES, basePolicy);
+    assert.notEqual(f.signature, 'run-shell');
+  });
+}
+test('real shell tools still classify CATASTROPHIC', () => {
+  for (const t of [
+    { name: 'execute_bash', description: 'Run a bash command', params: ['command'] },
+    { name: 'run_shell_command', description: '', params: ['cmd'] },
+    { name: 'eval_code', description: 'Evaluate code', params: ['code'] },
+  ]) {
+    const f = classify({ ...t, source: 'x' }, SIGNATURES, basePolicy);
+    assert.equal(f.signature, 'run-shell', `${t.name} should be run-shell`);
+  }
+});
+
 // ...but the real thing still fires: a distinct commerce/audience signal present.
 test('genuine spend / commitment / message tools still classify HIGH', () => {
   const buy = classify({ name: 'restock_item', description: 'Purchase inventory from a supplier', params: ['sku', 'quantity'], source: 'x.json' }, SIGNATURES, basePolicy);

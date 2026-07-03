@@ -47,9 +47,13 @@ export const SIGNATURES = [
   {
     id: 'run-shell',
     category: 'data-loss',
+    // 'eval' is NOT a strong verb: as a name token it means "evaluation"
+    // (PatronusEvalTool, ModelEvalTool) as often as code eval(), so it only fires
+    // WITH a code/script/command argHint. The genuinely unambiguous shell verbs
+    // (exec, shell, bash, spawn) still match on the name alone.
     verbs: ['exec', 'execute', 'shell', 'bash', 'sh', 'spawn', 'system', 'eval', 'run', 'command', 'subprocess', 'popen', 'rmdir'],
     argHints: ['command', 'cmd', 'script', 'code', 'shell', 'args', 'argv', 'bash', 'stdin', 'entrypoint'],
-    strongVerbs: ['exec', 'shell', 'bash', 'eval', 'spawn'],
+    strongVerbs: ['exec', 'shell', 'bash', 'spawn'],
     severity: 'CATASTROPHIC',
     action: 'runs arbitrary shell commands (it can do anything the process can, including rm -rf)',
     resembles: { aid: 'AID-2025-0010', title: "the Claude Code agent that ran rm -rf and deleted a developer's home directory (issue #10077)" },
