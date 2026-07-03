@@ -31,5 +31,5 @@
     }
   ],
   "reproPath": "examples/robert-williams-detroit-facial-recognition-wrongful-arrest-2020",
-  "reproducible": false
+  "reproducible": true
 }

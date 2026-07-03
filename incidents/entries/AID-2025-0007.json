@@ -27,5 +27,5 @@
     }
   ],
   "reproPath": "examples/aixbt-agent-dashboard-prompt-drain-55-eth-2025",
-  "reproducible": false
+  "reproducible": true
 }

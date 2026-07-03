@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/amazon-q-developer-vscode-wiper-prompt-injection-2025",
-  "reproducible": false
+  "reproducible": true
 }

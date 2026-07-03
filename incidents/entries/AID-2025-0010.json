@@ -31,5 +31,5 @@
     }
   ],
   "reproPath": "examples/claude-code-rm-rf-home-directory-issue-10077",
-  "reproducible": false
+  "reproducible": true
 }

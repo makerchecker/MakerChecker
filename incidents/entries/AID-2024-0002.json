@@ -27,5 +27,5 @@
     }
   ],
   "reproPath": "examples/evicore-the-dial-prior-authorization-algorithm",
-  "reproducible": false
+  "reproducible": true
 }

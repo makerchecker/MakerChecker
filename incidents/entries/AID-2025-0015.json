@@ -31,5 +31,5 @@
     }
   ],
   "reproPath": "examples/whatsapp-mcp-tool-poisoning-exfiltration",
-  "reproducible": false
+  "reproducible": true
 }

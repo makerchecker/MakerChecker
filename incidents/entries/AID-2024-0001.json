@@ -31,5 +31,5 @@
     }
   ],
   "reproPath": "examples/choice-home-warranty-chatbot-3000-ac-payout-2024",
-  "reproducible": false
+  "reproducible": true
 }

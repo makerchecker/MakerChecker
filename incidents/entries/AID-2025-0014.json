@@ -34,5 +34,5 @@
     }
   ],
   "reproPath": "examples/wadsworth-v-walmart-ai-fabricated-citations",
-  "reproducible": false
+  "reproducible": true
 }

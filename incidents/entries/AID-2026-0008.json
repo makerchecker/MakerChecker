@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/shareleak-copilot-studio-prompt-injection-cve-2026-21520",
-  "reproducible": false
+  "reproducible": true
 }

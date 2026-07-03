@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/google-gemini-cli-hallucinated-file-move-destroyed-project",
-  "reproducible": false
+  "reproducible": true
 }

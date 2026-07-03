@@ -31,5 +31,5 @@
     }
   ],
   "reproPath": "examples/freysa-ai-agent-tricked-releasing-47k-prize-2024",
-  "reproducible": false
+  "reproducible": true
 }

@@ -35,5 +35,5 @@
     }
   ],
   "reproPath": "examples/2010-flash-crash-automated-sell-algorithm",
-  "reproducible": false
+  "reproducible": true
 }
