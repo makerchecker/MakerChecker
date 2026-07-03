@@ -1,0 +1,39 @@
+{
+  "name": "@makerchecker/scan",
+  "version": "0.2.0",
+  "description": "See what your AI agent can do that you can't undo, in 60 seconds, named against the real disaster it resembles.",
+  "type": "module",
+  "bin": {
+    "scan": "./scan.mjs",
+    "mc-scan": "./scan.mjs"
+  },
+  "files": [
+    "scan.mjs",
+    "lib/",
+    "mc-policy.schema.json",
+    "examples/",
+    "README.md",
+    "CONTRACTS.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "keywords": [
+    "ai-agent",
+    "agent-safety",
+    "llm",
+    "mcp",
+    "blast-radius",
+    "governance",
+    "makerchecker"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sammysltd/makerchecker",
+    "directory": "packages/scan"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "severityThreshold": "MEDIUM",
+  "failOn": "CATASTROPHIC",
+  "ignore": [
+    "search_cases",
+    "draft_narrative"
+  ],
+  "allow": {
+    "delete_case_records": {
+      "gate": "high_risk_requires_gate",
+      "note": "Deny-by-default. Destroys data that cannot be recovered — resembles AID-2025-0005 (Replit agent deleted a production database). Requires a named-human approval gate before execution. Enforced by MakerChecker."
+    },
+    "wire_reimbursement": {
+      "gate": "limit_violation",
+      "note": "Deny-by-default. Moves money out of your control — resembles AID-2026-0004 (Grok-connected wallet drained of $150K). Requires a per-transaction cap, a per-run invocation cap, and a human above the line. Enforced by MakerChecker."
+    },
+    "submit_e2b_report": {
+      "gate": "approval_gate",
+      "note": "Deny-by-default. Commits a binding regulatory filing a human is accountable for — resembles AID-2022-0002 (Cigna PxDx batch denials). The agent that drafts must not be the one that submits: approval gate plus segregation of duties. Enforced by MakerChecker."
+    },
+    "email_patient": {
+      "gate": "high_risk_requires_gate",
+      "note": "Deny-by-default. Makes a binding or public statement on your behalf — resembles AID-2022-0001 (Air Canada held liable for its chatbot). Outbound to patients passes a gate, not a default grant. Enforced by MakerChecker."
+    }
+  },
+  "customSignatures": [
+    {
+      "id": "phi-export",
+      "category": "data-exfiltration",
+      "verbs": ["export", "download", "extract"],
+      "argHints": ["phi", "mrn", "patient", "dob", "ssn", "cohort"],
+      "severity": "HIGH",
+      "action": "exports protected health information out of the system of record",
+      "resembles": { "aid": "AID-2025-0006", "title": "ShadowLeak, zero-click Gmail exfiltration via the ChatGPT Deep Research agent" },
+      "control": "high_risk_requires_gate",
+      "why": "A tool that can pull PHI and reach the network is an exfiltration path via prompt injection. Bulk PHI export must be gated and egress must be restricted to an allowlist."
+    }
+  ]
+}
