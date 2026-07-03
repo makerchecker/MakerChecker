@@ -20,7 +20,11 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, join, relative, extname, basename } from 'node:path';
 
 /**
- * @typedef {{ name: string, description: string, params: string[], source: string }} Tool
+ * @typedef {{ name: string, description: string, params: string[], source: string, body?: string, bodyLine?: number }} Tool
+ *
+ * `body` (code discovery only) is a snippet of the source following the tool
+ * definition — up to BODY_MAX_LINES lines — used by classify() for body-signal
+ * detection. `bodyLine` is the 1-based line number of the first snippet line.
  */
 
 const CODE_EXT = new Set(['.py', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
@@ -180,12 +184,24 @@ function schemaParamNames(schema) {
 
 // ---- code discovery ---------------------------------------------------------
 
+const BODY_MAX_LINES = 60;
+
 function extractCode(content, rel, out) {
   const lineAt = makeLineAt(content);
+  const lines = content.split('\n');
   const push = (name, description, params, index) => {
     const n = (name || '').trim();
     if (!n) return;
-    out.push({ name: n, description: description || '', params: params || [], source: `${rel}:${lineAt(index)}` });
+    const line = lineAt(index);
+    // Body snippet: up to BODY_MAX_LINES lines following the definition line.
+    const bodyLine = line + 1;
+    const body = lines.slice(bodyLine - 1, bodyLine - 1 + BODY_MAX_LINES).join('\n');
+    const tool = { name: n, description: description || '', params: params || [], source: `${rel}:${line}` };
+    if (body.trim()) {
+      tool.body = body;
+      tool.bodyLine = bodyLine;
+    }
+    out.push(tool);
   };
 
   pyDecorators(content, push);
@@ -439,6 +455,10 @@ function dedupe(tools) {
     if (!existing.description && t.description) existing.description = t.description;
     if ((!existing.params || existing.params.length === 0) && t.params && t.params.length) {
       existing.params = t.params;
+    }
+    if (!existing.body && t.body) {
+      existing.body = t.body;
+      existing.bodyLine = t.bodyLine;
     }
   }
   return [...map.values()];
