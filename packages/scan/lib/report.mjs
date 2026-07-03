@@ -110,6 +110,10 @@ function heroPanel(f, style, pad) {
     const ev = f.evidence.slice(0, 3).map((e) => `${e.marker} (line ${e.line})`).join(', ');
     for (const l of wrapArr(`Body evidence: ${ev}`, W)) content.push(l);
   }
+  if (f.modelControlled) {
+    content.push('');
+    for (const l of wrapArr(`Model-controlled: ${f.modelControlled.note}.`, W)) content.push(l);
+  }
   content.push('');
   content.push(`Seen in: ${f.tool.source || 'unknown source'}`);
 
