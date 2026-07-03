@@ -158,7 +158,7 @@ test('a tool with no body signals gains no evidence field', () => {
   assert.equal(f.evidence, undefined);
 });
 
-test('an external-send body raises an OK tool to HIGH via the exfiltrate signature', () => {
+test('an external-send body raises an OK tool only to MEDIUM — an HTTP call alone is not exfiltration', () => {
   const t = {
     name: 'sync_notes',
     description: 'Sync notes.',
@@ -168,6 +168,8 @@ test('an external-send body raises an OK tool to HIGH via the exfiltrate signatu
     bodyLine: 21,
   };
   const f = classify(t, SIGNATURES, basePolicy);
-  assert.equal(f.severity, 'HIGH');
+  assert.equal(f.severity, 'MEDIUM');
   assert.equal(f.signature, 'exfiltrate');
+  // the send capability still feeds the composition pass via the evidence list
+  assert.equal(f.evidence[0].kind, 'external-send');
 });

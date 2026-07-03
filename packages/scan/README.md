@@ -22,6 +22,18 @@ A `CATASTROPHIC` finding is a call your agent can make on its own that does seri
 
 It reads tool definitions, not your live runtime policy. It does not find prompt-injection in your data or logic bugs. It finds what your agent can do on its own, which is the thing most teams have never actually looked at.
 
+## `--llm` deep scan (opt-in)
+
+The default scan is deterministic and offline. With `--llm`, the ambiguous tools — the ones static signatures could not confidently place — are additionally sent to the Anthropic API for a probabilistic second opinion:
+
+```bash
+ANTHROPIC_API_KEY=sk-... npx @makerchecker/scan <path> --llm
+```
+
+An LLM verdict can raise a finding's severity or explain what an unclearly-named tool actually enables; it can never lower a static severity. Findings the model assessed are labeled `LLM-assessed` in every output, so you always know which claims are reproducible and which are a model's judgment.
+
+**Privacy caveat:** `--llm` sends tool definitions and function-body snippets to the Anthropic API. Without the flag, nothing ever leaves your machine.
+
 ## Run it in CI
 
 Fail the build the moment your agent gains a `CATASTROPHIC` capability that no gate protects. Copy [`.github-workflow-template.yml`](./.github-workflow-template.yml) to `.github/workflows/mc-scan.yml`, or add the composite action directly:

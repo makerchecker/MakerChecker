@@ -71,7 +71,10 @@ const BODY_MARKERS = [
     re: /\bsubprocess\.\w+|\bos\.system\b|\bos\.popen\b|child_process|\bexecSync\b|\bexec\s*\(|\beval\s*\(/ },
   { kind: 'destroy', sigId: 'destroy-data', severity: 'CATASTROPHIC',
     re: /\bos\.remove\b|\bos\.unlink\b|\bshutil\.rmtree\b|\bfs\.rm(?:Sync|dir|dirSync)?\s*\(|\bfs\.unlink(?:Sync)?\s*\(|DROP\s+TABLE|DELETE\s+FROM/i },
-  { kind: 'external-send', sigId: 'exfiltrate', severity: 'HIGH',
+  // An outbound HTTP call alone is what half of all legitimate tools do — it is
+  // MEDIUM evidence here and feeds the composition pass, where read-sensitive +
+  // send-external pairs surface as the real exfiltration risk.
+  { kind: 'external-send', sigId: 'exfiltrate', severity: 'MEDIUM',
     re: /\brequests\.post\b|\bfetch\s*\(|\baxios\b|\bsmtplib\b|\bboto3\b|\burllib\.request\b|\bhttpx\b/ },
   { kind: 'write', sigId: 'destroy-data', severity: 'MEDIUM',
     re: /\bopen\s*\([^)\n]*['"][wa]b?['"]|\bwriteFileSync\b|\bfs\.writeFile\b|\bfs\.appendFile\b/ },
