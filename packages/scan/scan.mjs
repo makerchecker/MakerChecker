@@ -22,6 +22,7 @@ import { parseTools } from './lib/parse.mjs';
 import { loadPolicy, mergeSignatures } from './lib/policy.mjs';
 import { SIGNATURES } from './lib/signatures.mjs';
 import { classify } from './lib/classify.mjs';
+import { composePairs } from './lib/compose.mjs';
 import { renderTerminal, renderJson, renderMarkdown } from './lib/report.mjs';
 import { initPolicy } from './lib/policyInit.mjs';
 
@@ -81,8 +82,9 @@ catch (e) { console.error(`cannot read ${target}: ${e.message}`); process.exit(2
 const policy = loadPolicy(anchorDir(target), isInit ? undefined : (flags.policy || undefined));
 const signatures = mergeSignatures(SIGNATURES, policy);
 
-// Classify every tool.
-const findings = tools.map((t) => classify(t, signatures, policy));
+// Classify every tool, then run pairwise composition checks across the set.
+let findings = tools.map((t) => classify(t, signatures, policy));
+const pairs = composePairs(findings);
 
 // ---- init subcommand: write the deny-by-default policy -----------------------
 if (isInit) {
@@ -135,7 +137,7 @@ const meta = {
 
 // ---- no tools found ----------------------------------------------------------
 if (tools.length === 0) {
-  if (flags.json) { console.log(JSON.stringify({ meta, findings: [], counts }, null, 2)); process.exit(0); }
+  if (flags.json) { console.log(JSON.stringify({ meta, findings: [], counts, pairs: [] }, null, 2)); process.exit(0); }
   console.log(`No agent tool definitions found in ${target}.`);
   console.log('Point mc scan at a JSON file of function/tool definitions, or a directory containing one.');
   process.exit(0);
@@ -143,11 +145,11 @@ if (tools.length === 0) {
 
 // ---- report ------------------------------------------------------------------
 if (flags.json) {
-  console.log(JSON.stringify(renderJson(findings, meta), null, 2));
+  console.log(JSON.stringify(renderJson(findings, meta, pairs), null, 2));
 } else if (flags.markdown) {
-  console.log(renderMarkdown(findings, meta));
+  console.log(renderMarkdown(findings, meta, pairs));
 } else {
-  console.log(renderTerminal(findings, meta));
+  console.log(renderTerminal(findings, meta, pairs));
 }
 
 // ---- exit code: gate CI on --fail-on / policy.failOn -------------------------
