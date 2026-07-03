@@ -108,7 +108,7 @@ function heroPanel(f, style, pad) {
   content.push('');
   content.push(`Seen in: ${f.tool.source || 'unknown source'}`);
 
-  const labelStr = `─ NO ONE IS CHECKING · ${f.tool.name} `;
+  const labelStr = `─ UNCHECKED · ${f.tool.name} `;
   const fill = Math.max(0, W + 2 - labelStr.length);
   const top = '┌' + labelStr + '─'.repeat(fill) + '┐';
   const bot = '└' + '─'.repeat(W + 2) + '┘';
