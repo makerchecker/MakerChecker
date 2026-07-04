@@ -20,12 +20,31 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, join, relative, extname, basename } from 'node:path';
 
 /**
- * @typedef {{ name: string, description: string, params: string[], source: string }} Tool
+ * @typedef {{ name: string, description: string, params: string[], source: string, body?: string, bodyLine?: number, sandboxed?: boolean }} Tool
+ *
+ * `body` (code discovery only) is a snippet of the source following the tool
+ * definition — up to BODY_MAX_LINES lines — used by classify() for body-signal
+ * detection. `bodyLine` is the 1-based line number of the first snippet line.
+ * `sandboxed` is set when the file stands up a disposable execution sandbox.
  */
 
 const CODE_EXT = new Set(['.py', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '__pycache__', 'venv', '.venv']);
+// Test and spec directories: a "tool" defined only in a test is a fixture, not a
+// capability the agent ships. Flagging one (e.g. a <Rating> tag inside a pytest
+// config) is a false positive an outreach PR cannot survive.
+const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec', 'specs', 'e2e', '__mocks__', 'fixtures', 'testdata']);
 const MAX_FILE_BYTES = 4 * 1024 * 1024; // skip pathologically large files
+
+// A test/spec FILE by name: pytest (test_*.py, *_test.py, conftest.py) and
+// JS/TS (*.test.*, *.spec.*). Excluded from discovery for the same reason.
+function isTestFile(name) {
+  const n = name.toLowerCase();
+  if (n === 'conftest.py') return true;
+  if (/^test_.*\.py$/.test(n) || /_test\.py$/.test(n)) return true;
+  if (/\.(test|spec|vitest|e2e|stories|bench)\.[cm]?[jt]sx?$/.test(n)) return true;
+  return false;
+}
 
 /**
  * Parse tool definitions from a file or directory.
@@ -76,9 +95,10 @@ function walk(dir, out) {
     if (ent.isSymbolicLink()) continue; // avoid symlink loops
     const full = join(dir, name);
     if (ent.isDirectory()) {
-      if (SKIP_DIRS.has(name)) continue;
+      if (SKIP_DIRS.has(name) || TEST_DIRS.has(name.toLowerCase())) continue;
       walk(full, out);
     } else if (ent.isFile()) {
+      if (isTestFile(name)) continue;
       const ext = extname(name).toLowerCase();
       if (ext === '.json' || CODE_EXT.has(ext)) out.push(full);
     }
@@ -110,6 +130,7 @@ function collectFromFile(file, rel, out) {
 
   const ext = extname(file).toLowerCase();
   if (ext === '.json') {
+    if (isNonToolJson(file)) return; // package.json, tsconfig, lockfiles, grammars...
     let data;
     try {
       data = JSON.parse(content);
@@ -120,6 +141,27 @@ function collectFromFile(file, rel, out) {
   } else if (CODE_EXT.has(ext)) {
     extractCode(content, rel, out);
   }
+}
+
+// Well-known JSON files that carry a top-level `name`/`description` but are NOT
+// agent tools — package manifests, lockfiles, tsconfigs, TextMate grammars,
+// linter configs. Left unfiltered, a package.json named "@calcom/btcpayserver"
+// reads as a money-moving tool. This is the single biggest false-positive
+// source when scanning a real repo.
+const NON_TOOL_JSON = new Set([
+  'package.json', 'package-lock.json', 'tsconfig.json', 'jsconfig.json',
+  'composer.json', 'composer.lock', 'manifest.json', 'bower.json',
+  'lerna.json', 'nx.json', 'turbo.json', 'renovate.json', 'now.json',
+  'vercel.json', 'angular.json', 'firebase.json', 'app.json',
+]);
+function isNonToolJson(file) {
+  const b = basename(file).toLowerCase();
+  if (NON_TOOL_JSON.has(b)) return true;
+  if (b.endsWith('.tmlanguage.json')) return true; // TextMate grammars
+  if (b.startsWith('tsconfig.') && b.endsWith('.json')) return true;
+  if (b.startsWith('.eslintrc') || b.startsWith('.prettierrc') || b.startsWith('.babelrc')) return true;
+  if (b.endsWith('.code-workspace')) return true;
+  return false;
 }
 
 // ---- JSON extraction --------------------------------------------------------
@@ -146,24 +188,44 @@ function extractJson(data, source, out) {
   }
   if (found) return;
 
-  // Otherwise treat the object itself as a single tool / function wrapper.
-  itemToTool(data, source, out);
+  // Otherwise the object is not inside a tools/functions container. Treat it as
+  // a tool ONLY if it is actually tool-SHAPED — a function schema (parameters /
+  // inputSchema / ...) or an OpenAI function wrapper. A bare { name, description }
+  // with no schema is a manifest, a config, a marketplace listing — not a tool.
+  itemToTool(data, source, out, { requireSchema: true });
 }
 
-function itemToTool(item, source, out) {
+// Fields that make an object a function/tool definition rather than a named blob.
+const SCHEMA_KEYS = ['parameters', 'inputSchema', 'input_schema', 'args_schema', 'schema'];
+
+function itemToTool(item, source, out, { requireSchema = false } = {}) {
   if (!item || typeof item !== 'object') return;
 
   // Unwrap OpenAI { type:'function', function:{...} } and { function:{...} }.
   let obj = item;
+  let wrapped = false;
   if (item.function && typeof item.function === 'object' && typeof item.function.name === 'string') {
     obj = item.function;
+    wrapped = true;
   }
 
   const name = typeof obj.name === 'string' ? obj.name.trim() : '';
   if (!name) return;
 
+  // Agent / workflow GRAPH, not a tool: a node-and-link graph (AutoGPT agent
+  // export, LangGraph, flow builders) has a `name` and an `input_schema` but its
+  // name is marketing copy ("Lead Finder"), never a capability. Skip it — scoring
+  // the graph's name as a tool is how "Lead Finder" read as a money-mover.
+  if (Array.isArray(obj.nodes) && (Array.isArray(obj.links) || Array.isArray(obj.edges) || Array.isArray(obj.sub_graphs))) {
+    return;
+  }
+
+  const schema = SCHEMA_KEYS.map((k) => obj[k]).find((v) => v && typeof v === 'object');
+  // A lone object (not in a tools/functions container) must prove it is a tool:
+  // an explicit schema field, or an OpenAI function wrapper. Otherwise skip it.
+  if (requireSchema && !schema && !wrapped) return;
+
   const description = typeof obj.description === 'string' ? obj.description : '';
-  const schema = obj.parameters || obj.inputSchema || obj.input_schema || obj.args_schema || obj.schema;
   out.push({ name, description, params: schemaParamNames(schema), source });
 }
 
@@ -180,12 +242,41 @@ function schemaParamNames(schema) {
 
 // ---- code discovery ---------------------------------------------------------
 
+const BODY_MAX_LINES = 60;
+
+// Disposable-execution markers: if a file stands up an e2b sandbox, a container,
+// or a WASM/RestrictedPython interpreter, code the agent runs is confined to it.
+// Kept in sync with classify.mjs SANDBOX_RE.
+const SANDBOX_RE = /\be2b|@e2b\/|\bdaytona|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/i;
+
 function extractCode(content, rel, out) {
   const lineAt = makeLineAt(content);
+  const lines = content.split('\n');
+  // A sandbox is usually stood up once at module top (e.g. Sandbox.create()),
+  // far from the tool body, so we record it at the file level and carry it onto
+  // every tool discovered here — classify() uses it to downgrade a dangerous
+  // action that can only reach a disposable VM, not the user's real systems.
+  const fileHasSandbox = SANDBOX_RE.test(content);
   const push = (name, description, params, index) => {
     const n = (name || '').trim();
     if (!n) return;
-    out.push({ name: n, description: description || '', params: params || [], source: `${rel}:${lineAt(index)}` });
+    const line = lineAt(index);
+    // Body snippet: up to BODY_MAX_LINES lines following the definition line,
+    // truncated at the next top-level definition so one tool's snippet never
+    // bleeds into its neighbour's body (and claims its evidence).
+    const bodyLine = line + 1;
+    const raw = lines.slice(bodyLine - 1, bodyLine - 1 + BODY_MAX_LINES);
+    const boundary = raw.findIndex(
+      (l, i) => i > 0 && /^(?:@|(?:async\s+)?def |class |function |const |let |var |export )/.test(l),
+    );
+    const body = (boundary === -1 ? raw : raw.slice(0, boundary)).join('\n');
+    const tool = { name: n, description: description || '', params: params || [], source: `${rel}:${line}` };
+    if (body.trim()) {
+      tool.body = body;
+      tool.bodyLine = bodyLine;
+    }
+    if (fileHasSandbox) tool.sandboxed = true;
+    out.push(tool);
   };
 
   pyDecorators(content, push);
@@ -269,8 +360,12 @@ function objectLiteralTools(content, push) {
   while ((m = re.exec(content))) {
     const obj = enclosingObject(content, m.index);
     if (!obj) continue;
-    // Require a tool-shaped sibling key to avoid matching arbitrary objects.
-    if (!/\b(description|parameters|inputSchema|input_schema|schema)\b/.test(obj.text)) continue;
+    // Require a FUNCTION-shaped sibling: a parameter schema or a callable
+    // handler. `description` alone is far too weak — React form fields, app
+    // metadata (name+description+category), and settings schemas all carry a
+    // name and a description without being agent tools. This is the dominant
+    // false-positive source in application repos.
+    if (!/\b(parameters|inputSchema|input_schema|args_schema|schema|func|function|handler|execute|invoke|run_tool|_run|call)\b/.test(obj.text)) continue;
     const name = m[2];
     const description = kwString(obj.text, 'description') || '';
     push(name, description, schemaKeys(obj.text), obj.start);
@@ -439,6 +534,10 @@ function dedupe(tools) {
     if (!existing.description && t.description) existing.description = t.description;
     if ((!existing.params || existing.params.length === 0) && t.params && t.params.length) {
       existing.params = t.params;
+    }
+    if (!existing.body && t.body) {
+      existing.body = t.body;
+      existing.bodyLine = t.bodyLine;
     }
   }
   return [...map.values()];

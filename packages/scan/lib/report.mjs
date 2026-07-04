@@ -94,7 +94,7 @@ function heroPanel(f, style, pad) {
   const border = (s) => style(c, s);
 
   const content = [];
-  content.push(f.action || 'runs with no one checking it');
+  content.push((f.action || 'runs with no one checking it') + (f.assessedBy === 'llm' ? ' (LLM-assessed)' : ''));
   content.push('');
   if (f.resembles) {
     for (const l of wrapArr(`Resembles ${f.resembles.title}.`, W)) content.push(l);
@@ -104,6 +104,15 @@ function heroPanel(f, style, pad) {
   content.push(`Fix: ${f.control || 'gate this tool behind a human'}`);
   if (f.why) {
     for (const l of wrapArr(f.why, W)) content.push(l);
+  }
+  if (Array.isArray(f.evidence) && f.evidence.length) {
+    content.push('');
+    const ev = f.evidence.slice(0, 3).map((e) => `${e.marker} (line ${e.line})`).join(', ');
+    for (const l of wrapArr(`Body evidence: ${ev}`, W)) content.push(l);
+  }
+  if (f.modelControlled) {
+    content.push('');
+    for (const l of wrapArr(`Model-controlled: ${f.modelControlled.note}.`, W)) content.push(l);
   }
   content.push('');
   content.push(`Seen in: ${f.tool.source || 'unknown source'}`);
@@ -153,9 +162,10 @@ function severityTable(rows, style, pad) {
  * The delightful, honest terminal card. Returns the full string to print.
  * @param {Finding[]} findings
  * @param {Meta} meta
+ * @param {import('./compose.mjs').Pair[]} [pairs] composition findings
  * @returns {string}
  */
-export function renderTerminal(findings, meta) {
+export function renderTerminal(findings, meta, pairs = []) {
   const enabled = !!(process.stdout && process.stdout.isTTY);
   const style = makeStyler(enabled);
   const pad = '  ';
@@ -204,6 +214,22 @@ export function renderTerminal(findings, meta) {
   if (ungoverned.length) {
     out.push(pad + style([A.bold], `Findings (${ungoverned.length})`));
     for (const l of severityTable(ungoverned, style, pad)) out.push(l);
+    out.push('');
+  }
+
+  // composition pairs: capabilities that are safe alone and lethal together
+  if (Array.isArray(pairs) && pairs.length) {
+    out.push(pad + style([A.bold], `Composition (${pairs.length} pair${pairs.length === 1 ? '' : 's'})`) + style([A.dim], ' — safe alone, lethal together'));
+    for (const p of pairs) {
+      out.push(
+        pad + '  ' +
+          style(SEV_ANSI[p.severity] || [], p.severity) +
+          `  ${p.tools[0]} + ${p.tools[1]}` +
+          style([A.dim], `  ${p.resembles ? p.resembles.aid : ''}`),
+      );
+      out.push(wrap(p.risk, 70, pad + '     ').split('\n').map((l) => style([A.dim], l)).join('\n'));
+      out.push(pad + '     ' + style([A.dim], `Fix: ${p.fix}`));
+    }
     out.push('');
   }
 
@@ -281,8 +307,8 @@ export function renderTerminal(findings, meta) {
  * @param {Meta} meta
  * @returns {object}
  */
-export function renderJson(findings, meta) {
-  return { meta, findings, counts: meta.counts };
+export function renderJson(findings, meta, pairs = []) {
+  return { meta, findings, counts: meta.counts, pairs };
 }
 
 /**
@@ -291,7 +317,7 @@ export function renderJson(findings, meta) {
  * @param {Meta} meta
  * @returns {string}
  */
-export function renderMarkdown(findings, meta) {
+export function renderMarkdown(findings, meta, pairs = []) {
   const ungoverned = findings
     .filter((f) => !f.governedBy && f.severity !== 'OK')
     .sort(
@@ -320,7 +346,7 @@ export function renderMarkdown(findings, meta) {
       ? `${worst.resembles.title} (${worst.resembles.aid})`
       : 'a known agent incident';
     out.push(
-      `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'runs with no one checking it'} — resembles ${inc}.`,
+      `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'runs with no one checking it'}${worst.assessedBy === 'llm' ? ' (LLM-assessed)' : ''} — resembles ${inc}.`,
     );
     out.push('');
   }
@@ -339,6 +365,18 @@ export function renderMarkdown(findings, meta) {
     out.push('');
   } else {
     out.push('CERTIFIED. Nothing your agent does runs unchecked.');
+    out.push('');
+  }
+
+  if (Array.isArray(pairs) && pairs.length) {
+    out.push('### Composition pairs — safe alone, lethal together');
+    out.push('');
+    out.push('| Severity | Pair | Resembles (aid) | Fix |');
+    out.push('|---|---|---|---|');
+    for (const p of pairs) {
+      const aid = p.resembles ? p.resembles.aid : '—';
+      out.push(`| ${p.severity} | \`${p.tools[0]}\` + \`${p.tools[1]}\` | ${aid} | ${p.fix} |`);
+    }
     out.push('');
   }
 

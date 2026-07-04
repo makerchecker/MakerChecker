@@ -121,6 +121,33 @@ test('discovers function-calling tool object literals in .js code', () => {
   assert.equal(m.user, undefined);
 });
 
+// ---- body snippet capture ----------------------------------------------------
+
+test('code discovery captures a body snippet with its start line; JSON does not', () => {
+  const code = byName(parseTools(join(FIX, 'body_tool.py')));
+  const t = code.tidy_workspace;
+  assert.ok(t, 'tidy_workspace found');
+  assert.equal(typeof t.body, 'string');
+  assert.ok(t.body.includes('subprocess.run'), 'body contains the following lines');
+  assert.equal(typeof t.bodyLine, 'number');
+  assert.ok(t.bodyLine > 1);
+
+  const json = byName(parseTools(join(FIX, 'openai-tools.json')));
+  assert.equal(json.delete_file.body, undefined);
+});
+
+test('body snippet is capped at 60 lines', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mc-body-'));
+  try {
+    const filler = Array.from({ length: 200 }, (_, i) => `    x${i} = ${i}`).join('\n');
+    writeFileSync(join(dir, 'big.py'), `@tool\ndef long_tool(a):\n${filler}\n`);
+    const t = byName(parseTools(dir)).long_tool;
+    assert.ok(t.body.split('\n').length <= 60);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---- directory scan, resilience, dedupe, node_modules ----------------------
 
 test('scanning the fixtures directory finds all sources and skips junk', () => {

@@ -1,0 +1,96 @@
+// lib/compose.mjs — pairwise composition checks across the classified tool set.
+//
+// Some capabilities are safe alone and lethal together. The canonical case is
+// the exfiltration pair: one tool that READS a sensitive scope (email, files,
+// secrets, db, calendar, messages) plus one tool that SENDS externally (http
+// post, email send, message send, upload). Neither needs to be flagged on its
+// own — a prompt injection in the read scope turns the sender into the
+// exfiltration channel. This is exactly the EchoLeak / ShadowLeak zero-click
+// shape (AID-2025-0002, AID-2025-0006).
+//
+// Zero deps, deterministic, no I/O. Pairs are reported in their own section of
+// every renderer; they never change per-tool findings.
+
+/**
+ * @typedef {import('./classify.mjs').Finding} Finding
+ * @typedef {{ tools: [string, string], sources: [string, string], rule: string, severity: 'HIGH', risk: string, resembles: { aid: string, title: string }, alsoResembles: Array<{ aid: string, title: string }>, control: string, fix: string }} Pair
+ */
+
+const lc = (s) => String(s ?? '').toLowerCase();
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Same "appears" rule classify() uses: substring of the name, whole token in
+ *  the description or params. */
+function makeMatcher(tool) {
+  const name = lc(tool?.name);
+  const params = Array.isArray(tool?.params) ? tool.params.map(lc) : [];
+  const haystack = lc(tool?.description) + ' ' + params.join(' ');
+  return (term) => {
+    const t = lc(term);
+    if (!t) return false;
+    if (name.includes(t)) return true;
+    return new RegExp('\\b' + esc(t) + '\\b').test(haystack);
+  };
+}
+
+const READ_VERBS = ['read', 'get', 'list', 'fetch', 'search', 'query', 'load', 'download', 'browse', 'scan', 'view'];
+const SENSITIVE_SCOPES = ['email', 'mail', 'inbox', 'gmail', 'file', 'files', 'document', 'secret', 'credential', 'token', 'password', 'apikey', 'api_key', 'db', 'database', 'sql', 'record', 'calendar', 'event', 'message', 'messages', 'chat', 'conversation', 'contact'];
+
+const SEND_VERBS = ['send', 'post', 'upload', 'publish', 'email', 'message', 'notify', 'reply', 'dm', 'tweet', 'webhook', 'submit'];
+const SEND_HINTS = ['url', 'to', 'recipient', 'endpoint', 'webhook', 'channel', 'address', 'body', 'destination', 'email', 'phone'];
+
+/** Does this tool read a sensitive scope? */
+export function readsSensitive(tool) {
+  const appears = makeMatcher(tool);
+  return READ_VERBS.some(appears) && SENSITIVE_SCOPES.some(appears);
+}
+
+/** Does this tool send data externally? A send verb in the NAME is enough;
+ *  elsewhere it needs a destination-shaped hint to confirm. */
+export function sendsExternal(tool) {
+  const name = lc(tool?.name);
+  if (SEND_VERBS.some((v) => name.includes(v))) return true;
+  const appears = makeMatcher(tool);
+  return SEND_VERBS.some(appears) && SEND_HINTS.some(appears);
+}
+
+const EXFIL_PAIR = {
+  rule: 'exfiltration-pair',
+  severity: /** @type {'HIGH'} */ ('HIGH'),
+  risk: 'reads a sensitive scope + sends externally: a prompt injection in the read scope turns the sender into a zero-click exfiltration channel',
+  resembles: { aid: 'AID-2025-0002', title: 'the Microsoft 365 Copilot zero-click exfiltration via prompt injection (EchoLeak, CVE-2025-32711)' },
+  alsoResembles: [
+    { aid: 'AID-2025-0006', title: 'ShadowLeak, zero-click Gmail exfiltration via the ChatGPT Deep Research agent' },
+  ],
+  control: 'sod_violation',
+  fix: 'separate the roles holding these two grants / gate the sender',
+};
+
+/**
+ * Run pairwise composition checks over the classified tool set. Governed and
+ * ignored tools are out of scope: a gated sender defeats the pair.
+ * @param {Finding[]} findings
+ * @returns {Pair[]}
+ */
+export function composePairs(findings) {
+  const fs = Array.isArray(findings) ? findings.filter((f) => f && f.tool && !f.governedBy) : [];
+  const readers = fs.filter((f) => readsSensitive(f.tool));
+  const senders = fs.filter((f) => sendsExternal(f.tool));
+
+  const pairs = [];
+  const seen = new Set();
+  for (const r of readers) {
+    for (const s of senders) {
+      if (r.tool.name === s.tool.name) continue;
+      const key = r.tool.name + '\x00' + s.tool.name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({
+        tools: [r.tool.name, s.tool.name],
+        sources: [r.tool.source || '', s.tool.source || ''],
+        ...EXFIL_PAIR,
+      });
+    }
+  }
+  return pairs;
+}

@@ -22,6 +22,8 @@ import { parseTools } from './lib/parse.mjs';
 import { loadPolicy, mergeSignatures } from './lib/policy.mjs';
 import { SIGNATURES } from './lib/signatures.mjs';
 import { classify } from './lib/classify.mjs';
+import { composePairs } from './lib/compose.mjs';
+import { llmScan } from './lib/llmScan.mjs';
 import { renderTerminal, renderJson, renderMarkdown } from './lib/report.mjs';
 import { initPolicy } from './lib/policyInit.mjs';
 
@@ -33,10 +35,11 @@ const SEVERITIES = new Set(Object.keys(SEV_RANK));
 // ---- tiny arg parser (zero deps) --------------------------------------------
 function parseArgs(argv) {
   const positional = [];
-  const flags = { json: false, markdown: false, policy: null, failOn: null };
+  const flags = { json: false, markdown: false, policy: null, failOn: null, llm: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') flags.json = true;
+    else if (a === '--llm') flags.llm = true;
     else if (a === '--markdown' || a === '--md') flags.markdown = true;
     else if (a === '--policy' || a === '-p') flags.policy = argv[++i] ?? null;
     else if (a === '--fail-on') flags.failOn = (argv[++i] ?? '').toUpperCase() || null;
@@ -50,7 +53,7 @@ function parseArgs(argv) {
 
 const USAGE = `mc scan — find what your agent can do on its own, before anyone can stop it.
 
-  scan <path> [--json | --markdown] [--policy <file>] [--fail-on <severity>]
+  scan <path> [--json | --markdown] [--policy <file>] [--fail-on <severity>] [--llm]
   scan init [<path>] [--policy <outfile>]
 
 <path> is a tool/function JSON file or a directory to search (default: .).
@@ -81,8 +84,21 @@ catch (e) { console.error(`cannot read ${target}: ${e.message}`); process.exit(2
 const policy = loadPolicy(anchorDir(target), isInit ? undefined : (flags.policy || undefined));
 const signatures = mergeSignatures(SIGNATURES, policy);
 
-// Classify every tool.
-const findings = tools.map((t) => classify(t, signatures, policy));
+// Classify every tool, then run pairwise composition checks across the set.
+let findings = tools.map((t) => classify(t, signatures, policy));
+
+// Opt-in deep scan: send the AMBIGUOUS tools to the Anthropic API for a second
+// opinion. Only with --llm; the default scan sends nothing anywhere.
+if (flags.llm && !isInit) {
+  try {
+    findings = await llmScan(findings);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
+  }
+}
+
+const pairs = composePairs(findings);
 
 // ---- init subcommand: write the deny-by-default policy -----------------------
 if (isInit) {
@@ -135,7 +151,7 @@ const meta = {
 
 // ---- no tools found ----------------------------------------------------------
 if (tools.length === 0) {
-  if (flags.json) { console.log(JSON.stringify({ meta, findings: [], counts }, null, 2)); process.exit(0); }
+  if (flags.json) { console.log(JSON.stringify({ meta, findings: [], counts, pairs: [] }, null, 2)); process.exit(0); }
   console.log(`No agent tool definitions found in ${target}.`);
   console.log('Point mc scan at a JSON file of function/tool definitions, or a directory containing one.');
   process.exit(0);
@@ -143,14 +159,19 @@ if (tools.length === 0) {
 
 // ---- report ------------------------------------------------------------------
 if (flags.json) {
-  console.log(JSON.stringify(renderJson(findings, meta), null, 2));
+  console.log(JSON.stringify(renderJson(findings, meta, pairs), null, 2));
 } else if (flags.markdown) {
-  console.log(renderMarkdown(findings, meta));
+  console.log(renderMarkdown(findings, meta, pairs));
 } else {
-  console.log(renderTerminal(findings, meta));
+  console.log(renderTerminal(findings, meta, pairs));
 }
 
 // ---- exit code: gate CI on --fail-on / policy.failOn -------------------------
+// Set exitCode rather than calling process.exit(): the report we just wrote may
+// be hundreds of KB of JSON, and process.exit() truncates unflushed stdout when
+// it is a pipe (a CI step, `| jq`, a batch runner). Letting the event loop drain
+// naturally guarantees the full report reaches the consumer, then we exit with
+// the gate's code.
 const failRank = SEV_RANK[failOn] ?? SEV_RANK.CATASTROPHIC;
 const tripped = findings.some((f) => !f.governedBy && (SEV_RANK[f.severity] ?? 0) >= failRank && f.severity !== 'OK');
-process.exit(tripped ? 1 : 0);
+process.exitCode = tripped ? 1 : 0;

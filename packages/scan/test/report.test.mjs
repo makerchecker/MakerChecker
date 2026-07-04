@@ -170,9 +170,10 @@ test('renderTerminal handles an all-clear (no ungoverned findings)', () => {
 });
 
 // ---- renderJson ------------------------------------------------------------
-test('renderJson returns a stable { meta, findings, counts } object', () => {
+test('renderJson returns a stable { meta, findings, counts, pairs } object', () => {
   const o = renderJson(findings, meta);
-  assert.deepEqual(Object.keys(o).sort(), ['counts', 'findings', 'meta']);
+  assert.deepEqual(Object.keys(o).sort(), ['counts', 'findings', 'meta', 'pairs']);
+  assert.deepEqual(o.pairs, []);
   assert.equal(o.meta, meta);
   assert.equal(o.findings.length, findings.length);
   assert.deepEqual(o.counts, meta.counts);
