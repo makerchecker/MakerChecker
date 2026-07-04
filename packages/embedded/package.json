@@ -43,6 +43,11 @@
     "ed25519",
     "makerchecker"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sammysltd/makerchecker",
+    "directory": "packages/embedded"
+  },
   "license": "Apache-2.0",
   "engines": {
     "node": ">=18.4.0"
