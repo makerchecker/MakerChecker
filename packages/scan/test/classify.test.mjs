@@ -257,12 +257,12 @@ test('a simulation name does not shield a body that reaches a live venue', () =>
 });
 
 test('a description saying paper/mock/simulated suppresses a live-action match', () => {
-  const paper = { name: 'place_futu_order', description: 'Place a buy or sell order in Futu mock trading account.', params: ['symbol', 'quantity'], source: 'x.py' };
+  const paper = { name: 'place_broker_order', description: 'Place a buy or sell order in a mock trading account.', params: ['symbol', 'quantity'], source: 'x.py' };
   assert.equal(classify(paper, SIGNATURES, basePolicy).severity, 'OK');
   const sim = { name: 'process_refund', description: 'Simulates processing a refund for an order.', params: ['order_id', 'amount'], source: 'x.py' };
   assert.equal(classify(sim, SIGNATURES, basePolicy).severity, 'OK');
   // A genuinely live order (no sim language) still fires.
-  const live = { name: 'place_order', description: 'Place a live market order on Zerodha Kite.', params: ['symbol', 'quantity'], source: 'x.py' };
+  const live = { name: 'place_order', description: 'Place a live market order on a brokerage account.', params: ['symbol', 'quantity'], source: 'x.py' };
   assert.notEqual(classify(live, SIGNATURES, basePolicy).severity, 'OK');
 });
 
