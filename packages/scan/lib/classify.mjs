@@ -52,6 +52,31 @@ const NAME_SUPPRESSIBLE = new Set([
   'autonomous-spend', 'move-money', 'execute-trade', 'bind-commitment',
   'send-message', 'destroy-data', 'run-shell', 'commit-decision',
 ]);
+// Simulation / dry-run tokens. A tool named submit_backtest, paper_trade,
+// simulate_order, or mock_send runs against synthetic state — it commits nothing
+// real, so it must not match a live money/trade/message signature by name. Same
+// escape hatch as READ_LEAD: body evidence can still re-raise it if the body
+// actually reaches a live venue. `sandbox` is here too — a sandboxed action is
+// the SAFE pattern we deliberately downgrade, not flag.
+const SIMULATION_TOKENS = new Set([
+  'backtest', 'backtesting', 'simulate', 'simulation', 'simulated', 'sim',
+  'paper', 'papertrade', 'dryrun', 'sandbox', 'sandboxed', 'mock', 'mocked',
+  'replay', 'stub', 'fake',
+]);
+// The same signal in the DESCRIPTION, not just the tool name. Many tools are named
+// place_order / process_refund but their docstring says "paper trading account",
+// "Simulates a refund", "mock order", "dry run", "for demonstration" — they commit
+// nothing real. A live money/trade/message signature must not fire CATASTROPHIC on
+// these. Phrase-anchored so a live tool that merely MENTIONS "not a simulation"
+// isn't caught. Body evidence can still re-raise (a fake "paper" wrapper that POSTs
+// to a live venue).
+const SIM_DESC_RE = /\b(paper[- ]?trad|mock[- ]?(trad|order|account|api|payment|refund)|simulat|dry[- ]?run|sandbox|for (demo|demonstration|testing|illustration|educational)|not (a )?real|no real (money|order|trade|funds)|stub|dummy)/i;
+// A parameter that names an approval / authorization token the caller must present.
+// The developer has ATTEMPTED a gate (e.g. an out-of-band RiskGuard issues it), so
+// this is not a "no one is checking" finding — downgrade one step and say why.
+// (If the LLM can forge the token it's weaker than real SoD, but that's a design
+// review, not the CATASTROPHIC "wired straight to a live venue" claim.)
+const APPROVAL_PARAM_RE = /^(approval_token|approval|authorization|authorization_token|auth_token|approved_by|approver|sign_?off|signoff|approval_id)$/;
 
 // Signatures where a model-chosen amount/recipient turns the finding into a
 // concrete, demonstrable bug (not just an ungated capability).
@@ -62,6 +87,11 @@ const MODEL_CONTROLLED_SIGS = new Set([
 const VALUE_PARAM_RE = /^(amount|amt|price|total|subtotal|sum|cost|fee|value|balance|qty|quantity|units|shares|notional|refund_amount|charge_amount|transfer_amount|payment_amount|withdraw(al)?_amount)$/;
 // A parameter that names the DESTINATION / identity the money or message goes to.
 const TARGET_PARAM_RE = /^(recipient|to|to_account|dest|destination|account|account_id|account_number|iban|routing|card|card_number|wallet|wallet_address|payee|beneficiary|address)$/;
+// A source path that marks the tool as demo/sample/test code, not the deployed
+// agent. A finding here is real-shaped but NOT evidence a shipped product is
+// exposed — it must never drive a PR or a headline stat. We TAG (not drop): the
+// pattern still counts as "seen in the wild", just flagged as demo context.
+const DEMO_PATH_RE = /(^|\/)([\w-]*(tests?|fixtures?)|__tests__|examples?|samples?|notebooks?|demos?|cookbooks?|recipes?|playground|docs?)(\/|$)/i;
 
 /**
  * Build matchers over one tool. Verbs describe what the tool DOES, so they match
@@ -213,6 +243,7 @@ export function classify(tool, signatures, policy) {
 
   // Find the highest-severity matching signature (first match wins on ties).
   const matcher = makeMatcher(tool);
+  const descLc = lc(tool?.description);
   const tokenList = nameTokenList(toolName);
   const tokens = new Set(tokenList);
   const lead = tokenList[0] || '';
@@ -224,6 +255,10 @@ export function classify(tool, signatures, policy) {
     // write/spend signature (body evidence below can still re-raise it if the
     // function actually acts). Skip it and let a lower-severity or OK match stand.
     if (READ_LEAD.has(lead) && NAME_SUPPRESSIBLE.has(sig.id)) continue;
+    // Simulation/dry-run tool matched a live-action signature by name only: the
+    // action isn't real. Skip (body evidence below can still re-raise it).
+    if (NAME_SUPPRESSIBLE.has(sig.id)
+      && (tokenList.some((t) => SIMULATION_TOKENS.has(t)) || SIM_DESC_RE.test(descLc))) continue;
     const rank = SEV_RANK[sig.severity] ?? 0;
     if (best === null || rank > (SEV_RANK[best.severity] ?? 0)) best = sig;
   }
@@ -306,6 +341,18 @@ export function classify(tool, signatures, policy) {
     }
   }
 
+  // Approval-token parameter: the tool requires an approval/authorization token to
+  // act (an out-of-band gate the developer built). Not the "no one is checking"
+  // risk — downgrade one step (never below MEDIUM) and record it. A concrete find
+  // here would be "the LLM can forge the token", which is a design review, not the
+  // CATASTROPHIC claim, so we must not PR it as ungated.
+  if (finding.severity !== 'OK' && Array.isArray(tool.params)
+    && tool.params.map(lc).some((p) => APPROVAL_PARAM_RE.test(p))) {
+    finding.mitigation = { kind: 'approval-param', note: 'requires an approval/authorization token to act' };
+    finding.severity = finding.severity === 'CATASTROPHIC' ? 'HIGH' : (finding.severity === 'HIGH' ? 'MEDIUM' : finding.severity);
+    finding.action = `${finding.action || 'runs with no one checking it'} — but requires an approval/authorization token`;
+  }
+
   // policy.allow: this tool is already governed -> downgrade to OK, mark
   // governedBy, but KEEP the matched incident/control so the report can render
   // "was CATASTROPHIC — now governed by <gate>". The free-to-paid bridge.
@@ -314,6 +361,14 @@ export function classify(tool, signatures, policy) {
   if (gov && typeof gov === 'object') {
     finding.governedBy = { gate: gov.gate, note: gov.note };
     finding.severity = 'OK';
+  }
+
+  // Demo/test/example context: tag any non-OK finding whose source lives under a
+  // test/example/notebook path. Keeps the finding (the pattern IS in the wild) but
+  // lets gen-pr and the data-card exclude it — a finding in someone's test fixture
+  // is not a shipped-product exposure and must never reach a PR.
+  if (finding.severity !== 'OK' && typeof tool.source === 'string' && DEMO_PATH_RE.test(tool.source)) {
+    finding.demoContext = true;
   }
 
   return finding;
