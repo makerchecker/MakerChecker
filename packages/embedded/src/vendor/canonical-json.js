@@ -1,0 +1,118 @@
+/**
+ * RFC 8785 (JSON Canonicalization Scheme) serializer — VENDORED COPY.
+ *
+ * Byte-for-byte identical to MakerChecker's canonical serializer
+ * (packages/shared/src/canonical-json.ts and packages/proof-verifier/src/
+ * canonical-json.js). It is vendored here so `@makerchecker/embedded` installs
+ * and runs with zero runtime dependencies — the pure ./policy tier never touches
+ * it, and ./audit needs no external package to produce a verifier-ready hash.
+ *
+ * These exact rules are part of the public Agent Action Proof Receipt (AAPR)
+ * spec and MUST NOT drift: an audit-chain hash is only reproducible by an
+ * external verifier if canonicalization matches. test/canonical-drift.test.mjs
+ * fails if this copy ever diverges from the source of truth.
+ *
+ * Rules: no insignificant whitespace; object keys sorted by UTF-16 code units;
+ * numbers serialized per the ECMAScript Number::toString algorithm (which
+ * JSON.stringify implements); non-finite numbers are invalid; members whose
+ * value is `undefined` are omitted; `null` serializes as `null`. Input MUST be
+ * I-JSON (RFC 7493): an unpaired surrogate in any string fails closed
+ * (IllFormedStringError) before any bytes are hashed.
+ *
+ * Isomorphic: no Node or browser APIs are used here.
+ */
+
+export class CanonicalizationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "CanonicalizationError";
+  }
+}
+
+/** An unpaired surrogate in a string (key or value): the input is not I-JSON. */
+export class IllFormedStringError extends CanonicalizationError {
+  constructor(path) {
+    super(`ill-formed Unicode (unpaired surrogate) in string at ${path}`);
+    this.name = "IllFormedStringError";
+    this.path = path;
+  }
+}
+
+// String.prototype.isWellFormed is ES2024 (Node >= 20, all modern browsers);
+// captured so older runtimes fall through to the scan below.
+const nativeIsWellFormed = String.prototype.isWellFormed;
+
+/**
+ * True when `s` contains no unpaired surrogate (is well-formed UTF-16, hence
+ * encodable as UTF-8). Uses String.prototype.isWellFormed where the runtime
+ * provides it; the fallback is a dependency-free O(n) charCodeAt scan.
+ */
+export function isWellFormedString(s) {
+  if (nativeIsWellFormed) return nativeIsWellFormed.call(s);
+  for (let i = 0; i < s.length; i += 1) {
+    const unit = s.charCodeAt(i);
+    if (unit >= 0xdc00 && unit <= 0xdfff) return false; // low surrogate with no high before it
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = i + 1 < s.length ? s.charCodeAt(i + 1) : -1;
+      if (next < 0xdc00 || next > 0xdfff) return false; // high surrogate with no low after it
+      i += 1; // skip the low half of a valid pair
+    }
+  }
+  return true;
+}
+
+function assertWellFormed(s, path) {
+  if (!isWellFormedString(s)) throw new IllFormedStringError(path);
+}
+
+export function canonicalJson(value) {
+  return serialize(value, "$");
+}
+
+function serialize(value, path) {
+  if (value === null) return "null";
+
+  switch (typeof value) {
+    case "boolean":
+      return value ? "true" : "false";
+    case "number":
+      if (!Number.isFinite(value)) {
+        throw new CanonicalizationError(`non-finite number at ${path}`);
+      }
+      return JSON.stringify(value);
+    case "string":
+      // FAIL CLOSED before emitting bytes: an unpaired surrogate is not I-JSON
+      // and has no interoperable RFC 8785 serialization (see file header).
+      assertWellFormed(value, path);
+      return JSON.stringify(value);
+    case "object":
+      break;
+    default:
+      throw new CanonicalizationError(`unsupported type "${typeof value}" at ${path}`);
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.map((item, i) =>
+      serialize(item === undefined ? null : item, `${path}[${i}]`),
+    );
+    return `[${items.join(",")}]`;
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new CanonicalizationError(
+      `non-plain object at ${path}; canonicalize only JSON-shaped data`,
+    );
+  }
+
+  // Default Array.prototype.sort compares UTF-16 code units, as RFC 8785 requires.
+  const keys = Object.keys(value)
+    .filter((k) => value[k] !== undefined)
+    .sort();
+  const members = keys.map((k) => {
+    // Keys are strings too: check them before serializing, same as values.
+    assertWellFormed(k, `${path}.${k}`);
+    return `${JSON.stringify(k)}:${serialize(value[k], `${path}.${k}`)}`;
+  });
+  return `{${members.join(",")}}`;
+}

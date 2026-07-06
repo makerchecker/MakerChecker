@@ -1,0 +1,56 @@
+{
+  "name": "@makerchecker/embedded",
+  "version": "0.2.0",
+  "description": "In-process MakerChecker governance. Import the pure primitives — deny-by-default authorization + separation of duties — with no server, no Postgres, and no audit chain; add the signed, offline-verifiable chain only when you want it.",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./policy": {
+      "types": "./src/policy.d.ts",
+      "default": "./src/policy.js"
+    },
+    "./governor": {
+      "types": "./src/governor.d.ts",
+      "default": "./src/governor.js"
+    },
+    "./audit": {
+      "types": "./src/audit.d.ts",
+      "default": "./src/audit.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "lint": "true",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "keywords": [
+    "agent-governance",
+    "authorization",
+    "separation-of-duties",
+    "deny-by-default",
+    "policy",
+    "audit",
+    "ed25519",
+    "makerchecker"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sammysltd/makerchecker",
+    "directory": "packages/embedded"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.4.0"
+  },
+  "dependencies": {}
+}

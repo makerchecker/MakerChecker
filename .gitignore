@@ -22,6 +22,8 @@ packages/server/data/
 # Internal / not part of the public repo (kept locally)
 CLAUDE.md
 docs/positioning/
+yc.md
+tools/
 
 # Local-only docker override (recording/dev aid)
 docker-compose.override.yml

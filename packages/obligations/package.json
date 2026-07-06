@@ -1,6 +1,11 @@
 {
   "name": "@makerchecker/obligations",
   "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sammysltd/makerchecker",
+    "directory": "packages/obligations"
+  },
   "description": "Deterministic, offline mapping of a signed MakerChecker audit bundle to named regulatory obligations (21 CFR Part 11, EU Annex 11, GAMP 5, HIPAA 164.312). Emits MET / NOT_EVIDENCED / NOT_APPLICABLE per clause with citing seqs.",
   "license": "Apache-2.0",
   "type": "module",
