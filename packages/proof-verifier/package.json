@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sammysltd/makerchecker",
+    "url": "https://github.com/makerchecker/MakerChecker",
     "directory": "packages/proof-verifier"
   },
   "description": "Standalone, zero-dependency, zero-trust verifier for Agent Action Proof Receipt bundles. Verifies a MakerChecker audit bundle offline with no database or server access.",

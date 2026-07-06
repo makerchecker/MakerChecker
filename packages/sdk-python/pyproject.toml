@@ -20,8 +20,8 @@ dependencies = ["httpx>=0.24"]
 
 [project.urls]
 Homepage = "https://makerchecker.ai"
-Repository = "https://github.com/sammysltd/makerchecker"
-"Bug Tracker" = "https://github.com/sammysltd/makerchecker/issues"
+Repository = "https://github.com/makerchecker/MakerChecker"
+"Bug Tracker" = "https://github.com/makerchecker/MakerChecker/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=9.1.1", "ruff>=0.15.20", "mypy>=1.8"]

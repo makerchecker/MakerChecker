@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sammysltd/makerchecker",
+    "url": "https://github.com/makerchecker/MakerChecker",
     "directory": "injection-gauntlet"
   },
   "description": "A runnable corpus + harness proving that structural enforcement stops a fully prompt-injected agent. Assumes the injection wins at the model layer; shows the tool call never executes.",

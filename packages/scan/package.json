@@ -33,7 +33,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sammysltd/makerchecker",
+    "url": "https://github.com/makerchecker/MakerChecker",
     "directory": "packages/scan"
   }
 }
