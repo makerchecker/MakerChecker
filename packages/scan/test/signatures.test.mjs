@@ -109,7 +109,10 @@ test('signature ids are unique and every signature has verbs + action + why', ()
   for (const sig of SIGNATURES) {
     assert.ok(!ids.has(sig.id), `duplicate signature id: ${sig.id}`);
     ids.add(sig.id);
-    assert.ok(Array.isArray(sig.verbs) && sig.verbs.length > 0, `signature '${sig.id}' has no verbs`);
+    // A signature must be matchable via verbs OR nameOnlyVerbs (e.g. web3-value-
+    // movement matches only on name tokens, so its `verbs` is deliberately empty).
+    const matchable = (sig.verbs || []).length + (sig.nameOnlyVerbs || []).length;
+    assert.ok(Array.isArray(sig.verbs) && matchable > 0, `signature '${sig.id}' has no verbs or nameOnlyVerbs`);
     assert.ok(sig.action && sig.action.length > 0, `signature '${sig.id}' has no action`);
     assert.ok(sig.why && sig.why.length > 20, `signature '${sig.id}' has no meaningful why`);
     // strongVerbs, when present, must be a subset of verbs

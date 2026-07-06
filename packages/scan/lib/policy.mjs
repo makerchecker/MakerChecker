@@ -14,6 +14,8 @@ import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname, join, parse as parsePath } from 'node:path';
 
+import { listProviders } from './llmProviders.mjs';
+
 /**
  * @typedef {import('./signatures.mjs').Signature} Signature
  * @typedef {import('./signatures.mjs').Control} Control
@@ -28,8 +30,11 @@ export const DEFAULT_POLICY = {
   ignore: [],
   allow: {},
   customSignatures: [],
+  llm: {},
   path: null,
 };
+
+const LLM_MODES = ['tools', 'code', 'both'];
 
 // ---- schema-derived vocabularies -------------------------------------------
 // Canonical fallbacks (mirror CONTRACTS.md). We prefer the values pulled from
@@ -66,7 +71,7 @@ function loadSchemaVocab() {
 const { severities: SEVERITIES, controls: CONTROLS } = loadSchemaVocab();
 const KNOWN_KEYS = new Set([
   '$schema', 'version', 'severityThreshold', 'failOn',
-  'ignore', 'allow', 'customSignatures',
+  'ignore', 'allow', 'customSignatures', 'llm',
 ]);
 
 // ---- helpers ----------------------------------------------------------------
@@ -193,6 +198,36 @@ export function validatePolicy(raw) {
       p.customSignatures = out;
     } else {
       errors.push('"customSignatures" must be an array; using []');
+    }
+  }
+
+  // optional llm block. Keys are NEVER read from policy (kept secret-free), so a
+  // key/apiKey here is a hard drop with a warning.
+  if ('llm' in raw) {
+    if (isPlainObject(raw.llm)) {
+      const L = raw.llm;
+      const out = {};
+      if ('key' in L || 'apiKey' in L) errors.push('"llm.apiKey"/"llm.key" is not allowed in policy (keys come from env or --llm-key); dropped');
+      if ('mode' in L) { if (LLM_MODES.includes(L.mode)) out.mode = L.mode; else errors.push(`"llm.mode" must be one of ${LLM_MODES.join(', ')}; dropped`); }
+      if ('provider' in L) { if (listProviders().includes(L.provider)) out.provider = L.provider; else errors.push(`"llm.provider" ${JSON.stringify(L.provider)} is not a known provider; dropped`); }
+      if ('model' in L) { if (typeof L.model === 'string') out.model = L.model; else errors.push('"llm.model" must be a string; dropped'); }
+      if ('baseUrl' in L) { if (typeof L.baseUrl === 'string') out.baseUrl = L.baseUrl; else errors.push('"llm.baseUrl" must be a string; dropped'); }
+      if ('jsonMode' in L) { if (typeof L.jsonMode === 'boolean') out.jsonMode = L.jsonMode; else errors.push('"llm.jsonMode" must be a boolean; dropped'); }
+      if ('gateCi' in L) { if (typeof L.gateCi === 'boolean') out.gateCi = L.gateCi; else errors.push('"llm.gateCi" must be a boolean; dropped'); }
+      if (isPlainObject(L.codeScan)) {
+        const cs = {};
+        for (const k of ['maxFiles', 'windowLines', 'maxBytesPerChunk', 'maxChunks', 'maxFindings']) {
+          if (k in L.codeScan) {
+            const n = Number(L.codeScan[k]);
+            if (Number.isFinite(n) && n > 0) cs[k] = Math.min(n, 100000);
+            else errors.push(`"llm.codeScan.${k}" must be a positive number; dropped`);
+          }
+        }
+        if (Object.keys(cs).length) out.codeScan = cs;
+      }
+      p.llm = out;
+    } else {
+      errors.push('"llm" must be an object; using {}');
     }
   }
 

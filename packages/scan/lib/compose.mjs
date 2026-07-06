@@ -1,94 +1,191 @@
 // lib/compose.mjs — pairwise composition checks across the classified tool set.
 //
-// Some capabilities are safe alone and lethal together. The canonical case is
-// the exfiltration pair: one tool that READS a sensitive scope (email, files,
-// secrets, db, calendar, messages) plus one tool that SENDS externally (http
-// post, email send, message send, upload). Neither needs to be flagged on its
-// own — a prompt injection in the read scope turns the sender into the
-// exfiltration channel. This is exactly the EchoLeak / ShadowLeak zero-click
-// shape (AID-2025-0002, AID-2025-0006).
+// Some capabilities are safe alone and lethal together. Three pairs, checked in
+// severity order so an actor is claimed by its worst role:
+//   - RCE pair (CATASTROPHIC): reads UNTRUSTED content + runs shell/exec. A prompt
+//     injection in the fetched content becomes remote code execution.
+//   - injection-drain pair (CATASTROPHIC): reads UNTRUSTED content + moves on-chain
+//     value or places orders. The aixbt / Freysa / Grok drain shape.
+//   - exfiltration pair (HIGH): reads a SENSITIVE scope + sends externally. The
+//     EchoLeak / ShadowLeak zero-click shape.
 //
-// Zero deps, deterministic, no I/O. Pairs are reported in their own section of
-// every renderer; they never change per-tool findings.
+// Matching is TOKEN-AWARE (name tokens + params, never the description) — the old
+// substring matcher made every ReadEmails count as a sender and produced hundreds
+// of junk pairs on real repos. Output is grouped: one finding per ACTOR, listing
+// up to five untrusted/sensitive readers.
+//
+// Zero deps, deterministic, no I/O.
 
 /**
  * @typedef {import('./classify.mjs').Finding} Finding
- * @typedef {{ tools: [string, string], sources: [string, string], rule: string, severity: 'HIGH', risk: string, resembles: { aid: string, title: string }, alsoResembles: Array<{ aid: string, title: string }>, control: string, fix: string }} Pair
+ * @typedef {{ rule: string, severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM', actor: string, actorSource: string, readers: string[], readerSources: string[], moreReaders: number, tools: [string, string], sources: [string, string], risk: string, resembles: { aid: string, title: string }, alsoResembles: Array<{ aid: string, title: string }>, control: string, fix: string }} Pair
  */
 
 const lc = (s) => String(s ?? '').toLowerCase();
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Same "appears" rule classify() uses: substring of the name, whole token in
- *  the description or params. */
-function makeMatcher(tool) {
-  const name = lc(tool?.name);
-  const params = Array.isArray(tool?.params) ? tool.params.map(lc) : [];
-  const haystack = lc(tool?.description) + ' ' + params.join(' ');
-  return (term) => {
-    const t = lc(term);
-    if (!t) return false;
-    if (name.includes(t)) return true;
-    return new RegExp('\\b' + esc(t) + '\\b').test(haystack);
-  };
+// Split a tool name into lowercased tokens (camelCase/snake/kebab), same as classify.
+function nameTokenList(name) {
+  const raw = String(name ?? '').match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+|[0-9]+/g) || [];
+  return raw.map((t) => t.toLowerCase());
 }
 
-const READ_VERBS = ['read', 'get', 'list', 'fetch', 'search', 'query', 'load', 'download', 'browse', 'scan', 'view'];
-const SENSITIVE_SCOPES = ['email', 'mail', 'inbox', 'gmail', 'file', 'files', 'document', 'secret', 'credential', 'token', 'password', 'apikey', 'api_key', 'db', 'database', 'sql', 'record', 'calendar', 'event', 'message', 'messages', 'chat', 'conversation', 'contact'];
+function ctx(tool) {
+  const tokens = new Set(nameTokenList(tool?.name));
+  const paramSet = new Set((Array.isArray(tool?.params) ? tool.params : []).map(lc));
+  return { tokens, paramSet, lead: nameTokenList(tool?.name)[0] || '' };
+}
 
-const SEND_VERBS = ['send', 'post', 'upload', 'publish', 'email', 'message', 'notify', 'reply', 'dm', 'tweet', 'webhook', 'submit'];
-const SEND_HINTS = ['url', 'to', 'recipient', 'endpoint', 'webhook', 'channel', 'address', 'body', 'destination', 'email', 'phone'];
+// First hint in `set` that is a DIFFERENT token than `verb` and appears as a name
+// token or a param name — never in the description (the old FP source).
+function distinctHint(set, c, verb) {
+  const v = lc(verb);
+  for (const h of set) {
+    const t = lc(h);
+    if (t !== v && (c.tokens.has(t) || c.paramSet.has(t))) return t;
+  }
+  return null;
+}
 
-/** Does this tool read a sensitive scope? */
+// ---- ported vocabulary (kept in sync with classify.mjs) ---------------------
+const READ_LEAD = new Set(['get', 'fetch', 'read', 'view', 'list', 'search', 'query', 'find', 'lookup', 'retrieve', 'load', 'describe', 'show', 'count', 'is', 'has', 'can', 'should', 'check', 'validate', 'verify', 'inspect', 'calculate', 'estimate', 'evaluate', 'preview', 'summarize', 'analyze', 'classify', 'detect', 'deny', 'reject', 'decline', 'refuse']);
+const SIMULATION_TOKENS = new Set(['backtest', 'backtesting', 'simulate', 'simulation', 'simulated', 'sim', 'paper', 'papertrade', 'dryrun', 'sandbox', 'sandboxed', 'mock', 'mocked', 'replay', 'stub', 'fake']);
+const APPROVAL_PARAM_RE = /^(approval_token|approval|authorization|authorization_token|auth_token|approved_by|approver|sign_?off|signoff|approval_id)$/;
+
+const READ_VERBS = ['get', 'fetch', 'read', 'list', 'load', 'browse', 'scrape', 'crawl', 'retrieve', 'download', 'receive', 'poll', 'pull', 'watch', 'monitor', 'view', 'search', 'scan'];
+const READ_NOUNS = new Set(['history', 'snapshot', 'log', 'logs', 'status', 'details', 'detail', 'info', 'profile', 'board', 'summary', 'report', 'overview', 'metrics', 'chart', 'quote', 'balance', 'book', 'clock', 'series', 'estimate', 'estimates']);
+const ACTION_LEAD = new Set(['add', 'create', 'send', 'post', 'write', 'delete', 'remove', 'update', 'set', 'put', 'patch', 'place', 'execute', 'submit', 'run', 'make', 'build', 'deploy', 'install', 'upload', 'publish', 'insert', 'append', 'push', 'transfer', 'swap', 'buy', 'sell', 'pay', 'mint', 'burn', 'approve', 'sign', 'grant', 'revoke', 'drop', 'wipe', 'purge', 'destroy', 'cancel', 'register', 'schedule', 'book']);
+// UNTRUSTED external content an attacker can plant an injection in. NO bare 'page'
+// (pagination), NO 'search' (self-confirms search_* tools).
+const UNTRUSTED_SOURCES = ['url', 'uri', 'web', 'webpage', 'website', 'http', 'https', 'html', 'feed', 'rss', 'atom', 'inbox', 'mailbox', 'email', 'emails', 'mail', 'message', 'messages', 'dm', 'slack', 'discord', 'telegram', 'whatsapp', 'comment', 'comments', 'issue', 'issues', 'ticket', 'thread', 'reply', 'review', 'reviews', 'post', 'posts', 'tweet', 'cast', 'article', 'content', 'contents', 'browser', 'notification', 'transcript', 'ipfs'];
+// Sensitive scopes worth exfiltrating. NO 'token' (crypto/auth), NO 'event(s)'
+// (chain logs), NO 'calendar' (public earnings calendars in this domain).
+const SENSITIVE_SCOPES = ['email', 'emails', 'mail', 'inbox', 'gmail', 'file', 'files', 'document', 'documents', 'secret', 'secrets', 'credential', 'credentials', 'password', 'apikey', 'api_key', 'db', 'database', 'sql', 'record', 'records', 'message', 'messages', 'chat', 'conversation', 'contact', 'contacts', 'todo', 'task', 'tasks', 'note', 'notes', 'photo', 'photos'];
+const SEND_STRONG = ['upload', 'publish', 'tweet', 'webhook', 'dm', 'slack', 'sms', 'broadcast', 'email', 'emails'];
+const SEND_LEAD = new Set(['send', 'notify', 'reply', 'forward', 'transmit', 'deliver']);
+const SEND_VERBS = ['send', 'post', 'notify', 'reply', 'message', 'forward', 'transmit', 'deliver', 'emit', 'call', 'ping', 'dispatch'];
+const SEND_HINTS = ['url', 'recipient', 'endpoint', 'webhook', 'channel', 'destination', 'body', 'subject', 'cc', 'bcc', 'mailto', 'payload', 'attachment'];
+const WEB3_WRITE = new Set(['send', 'transfer', 'swap', 'bridge', 'withdraw', 'deposit', 'disperse', 'mint', 'burn', 'stake', 'unstake', 'sign', 'write', 'execute', 'submit', 'sweep', 'wrap', 'unwrap', 'pay', 'wire', 'remit', 'payout', 'buy', 'sell']);
+const WEB3_OBJECTS = ['transaction', 'transactions', 'tx', 'txn', 'txns', 'contract', 'order', 'orders', 'position', 'positions', 'swap', 'token', 'tokens', 'coin', 'eth', 'sol', 'usdc', 'usdt', 'btc', 'wallet', 'onchain', 'chain', 'transfer', 'bridge', 'liquidity', 'vault', 'funds', 'fund', 'asset', 'assets', 'crypto', 'erc20', 'erc721', 'nft', 'collateral', 'pool', 'trade', 'amount'];
+const MONEY_SIGS = new Set(['move-money', 'execute-trade', 'autonomous-spend']);
+const ABI_SRC_RE = /(^|\/)abi(\/|$)|\.abi\.json$/i;
+
+// ---- predicates -------------------------------------------------------------
+function anyReadToken(c) {
+  for (const t of c.tokens) if (READ_LEAD.has(t) || READ_NOUNS.has(t)) return true;
+  return false;
+}
+function isSim(c) {
+  for (const t of c.tokens) if (SIMULATION_TOKENS.has(t)) return true;
+  return false;
+}
+
+function readerBase(tool, hintSet) {
+  const c = ctx(tool);
+  if (ACTION_LEAD.has(c.lead)) return false; // a write-lead tool is not a reader
+  const rv = READ_VERBS.find((v) => c.tokens.has(v));
+  if (!rv) return false;
+  return distinctHint(hintSet, c, rv) != null;
+}
+
+/** Reads UNTRUSTED external content (a prompt-injection ingress). */
+export function readsUntrusted(tool) {
+  return readerBase(tool, UNTRUSTED_SOURCES);
+}
+/** Reads a SENSITIVE scope (worth exfiltrating). */
 export function readsSensitive(tool) {
-  const appears = makeMatcher(tool);
-  return READ_VERBS.some(appears) && SENSITIVE_SCOPES.some(appears);
+  return readerBase(tool, SENSITIVE_SCOPES);
 }
 
-/** Does this tool send data externally? A send verb in the NAME is enough;
- *  elsewhere it needs a destination-shaped hint to confirm. */
+/** Sends data externally. A send verb in the NAME (strong) is enough; a generic
+ *  send verb needs a destination-shaped hint. Read-named tools are never senders. */
 export function sendsExternal(tool) {
-  const name = lc(tool?.name);
-  if (SEND_VERBS.some((v) => name.includes(v))) return true;
-  const appears = makeMatcher(tool);
-  return SEND_VERBS.some(appears) && SEND_HINTS.some(appears);
+  const c = ctx(tool);
+  if (READ_LEAD.has(c.lead) || anyReadToken(c)) return false;
+  if (SEND_LEAD.has(c.lead)) return true;
+  if (SEND_STRONG.some((v) => c.tokens.has(v))) return true;
+  const sv = SEND_VERBS.find((v) => c.tokens.has(v));
+  return !!(sv && distinctHint(SEND_HINTS, c, sv));
 }
 
-const EXFIL_PAIR = {
-  rule: 'exfiltration-pair',
-  severity: /** @type {'HIGH'} */ ('HIGH'),
-  risk: 'reads a sensitive scope + sends externally: a prompt injection in the read scope turns the sender into a zero-click exfiltration channel',
-  resembles: { aid: 'AID-2025-0002', title: 'the Microsoft 365 Copilot zero-click exfiltration via prompt injection (EchoLeak, CVE-2025-32711)' },
-  alsoResembles: [
-    { aid: 'AID-2025-0006', title: 'ShadowLeak, zero-click Gmail exfiltration via the ChatGPT Deep Research agent' },
-  ],
-  control: 'sod_violation',
-  fix: 'separate the roles holding these two grants / gate the sender',
-};
+/** Moves real value: a money/trade finding OR a name-anchored on-chain write,
+ *  each confirmed by a value object and never a read/sim/ABI pseudo-tool. */
+function movesValue(finding) {
+  const t = finding.tool;
+  const c = ctx(t);
+  if (ABI_SRC_RE.test(t.source || '')) return false;
+  if (READ_LEAD.has(c.lead) || anyReadToken(c) || isSim(c)) return false;
+  if (MONEY_SIGS.has(finding.signature) && finding.severity !== 'OK' && distinctHint(WEB3_OBJECTS, c, '') != null) return true;
+  if (WEB3_WRITE.has(c.lead) && distinctHint(WEB3_OBJECTS, c, c.lead) != null) return true;
+  return false;
+}
+
+function runsShell(finding) {
+  return finding.signature === 'run-shell' || (finding.evidence || []).some((e) => e.kind === 'shell');
+}
+
+// A developer gate takes the actor out of scope. NOT selfApproval — a model-settable
+// confirm flag is theatre, so a self-approving mover must still surface in the drain pair.
+function actorMitigated(finding) {
+  if (finding.governedBy || finding.mitigation) return true;
+  return (finding.tool.params || []).map(lc).some((p) => APPROVAL_PARAM_RE.test(p));
+}
+
+// ---- pair rules (severity order for cross-rule actor dedup) ------------------
+const PAIR_RULES = [
+  {
+    rule: 'rce-pair', severity: 'CATASTROPHIC', pool: 'untrusted', actor: runsShell,
+    risk: 'reads untrusted content + runs shell/exec: an injection in the fetched content becomes remote code execution',
+    resembles: { aid: 'AID-2025-0008', title: 'the Amazon Q Developer VS Code extension that shipped with a data-wiping prompt injection' },
+    alsoResembles: [{ aid: 'AID-2025-0010', title: "the Claude Code agent that ran rm -rf and deleted a developer's home directory (issue #10077)" }],
+    control: 'sod_violation', fix: 'separate the roles / gate the executor behind a human and never feed it untrusted content',
+  },
+  {
+    rule: 'injection-drain-pair', severity: 'CATASTROPHIC', pool: 'untrusted', actor: movesValue,
+    risk: 'reads untrusted content + moves value (on-chain transfer/swap or order): a prompt injection in the read turns the mover into a drain',
+    resembles: { aid: 'AID-2026-0004', title: 'the Grok-connected wallet drained of $150K by a Morse-code prompt injection' },
+    alsoResembles: [
+      { aid: 'AID-2025-0007', title: 'the aixbt autonomous crypto agent drained of 55.5 ETH via injected dashboard prompts' },
+      { aid: 'AID-2024-0003', title: 'the Freysa autonomous agent tricked into releasing a $47K crypto prize pool' },
+    ],
+    control: 'sod_violation', fix: 'separate the roles / cap and gate the mover behind a different party than the reader',
+  },
+  {
+    rule: 'exfiltration-pair', severity: 'HIGH', pool: 'sensitive', actor: (f) => sendsExternal(f.tool) || f.signature === 'send-message',
+    risk: 'reads a sensitive scope + sends externally: a prompt injection in the read scope turns the sender into a zero-click exfiltration channel',
+    resembles: { aid: 'AID-2025-0002', title: 'the Microsoft 365 Copilot zero-click exfiltration via prompt injection (EchoLeak, CVE-2025-32711)' },
+    alsoResembles: [{ aid: 'AID-2025-0006', title: 'ShadowLeak, zero-click Gmail exfiltration via the ChatGPT Deep Research agent' }],
+    control: 'sod_violation', fix: 'separate the roles holding these two grants / gate the sender',
+  },
+];
 
 /**
- * Run pairwise composition checks over the classified tool set. Governed and
- * ignored tools are out of scope: a gated sender defeats the pair.
+ * Run pairwise composition checks over the classified tool set. Governed tools are
+ * out of scope. One finding per actor, claimed by its most severe rule.
  * @param {Finding[]} findings
  * @returns {Pair[]}
  */
 export function composePairs(findings) {
-  const fs = Array.isArray(findings) ? findings.filter((f) => f && f.tool && !f.governedBy) : [];
-  const readers = fs.filter((f) => readsSensitive(f.tool));
-  const senders = fs.filter((f) => sendsExternal(f.tool));
+  const fs = Array.isArray(findings) ? findings.filter((f) => f && f.tool && f.tool.name && !f.governedBy) : [];
+  const untrusted = fs.filter((f) => readsUntrusted(f.tool));
+  const sensitive = fs.filter((f) => readsSensitive(f.tool));
 
+  const claimedActors = new Set();
   const pairs = [];
-  const seen = new Set();
-  for (const r of readers) {
-    for (const s of senders) {
-      if (r.tool.name === s.tool.name) continue;
-      const key = r.tool.name + '\x00' + s.tool.name;
-      if (seen.has(key)) continue;
-      seen.add(key);
+  for (const R of PAIR_RULES) {
+    const pool = R.pool === 'sensitive' ? sensitive : untrusted;
+    for (const f of fs) {
+      if (claimedActors.has(f.tool.name) || actorMitigated(f) || !R.actor(f)) continue;
+      const readers = pool.filter((r) => r.tool.name !== f.tool.name);
+      if (!readers.length) continue;
+      claimedActors.add(f.tool.name);
+      const names = readers.map((r) => r.tool.name);
+      const srcs = readers.map((r) => r.tool.source || '');
       pairs.push({
-        tools: [r.tool.name, s.tool.name],
-        sources: [r.tool.source || '', s.tool.source || ''],
-        ...EXFIL_PAIR,
+        rule: R.rule, severity: R.severity,
+        actor: f.tool.name, actorSource: f.tool.source || '',
+        readers: names.slice(0, 5), readerSources: srcs.slice(0, 5), moreReaders: Math.max(0, names.length - 5),
+        tools: [names[0], f.tool.name], sources: [srcs[0], f.tool.source || ''],
+        risk: R.risk, resembles: R.resembles, alsoResembles: R.alsoResembles, control: R.control, fix: R.fix,
       });
     }
   }

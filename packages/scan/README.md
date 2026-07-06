@@ -1,46 +1,71 @@
-# mc scan
+# @makerchecker/scan
 
-mc scan finds what your agent can do on its own, before anyone can stop it.
-It reads your agent's tools and flags every call it can make with no human checking, each named against a real incident where exactly that went wrong.
-Run it on any agent. The calls no one is checking are the ones you gate first.
+`mc scan` is a zero-dependency static analyzer for AI agent tool definitions. It scans your local codebase or schemas to discover what capabilities your agent has access to, classifies their risk levels, and cross-references them against a catalog of 41 real-world agent incidents.
+
+Run it on any agent project to audit capabilities, identify potential vulnerabilities, and generate a deny-by-default security policy.
 
 ```bash
 npx @makerchecker/scan <path>
 ```
 
-`<path>` is a JSON file of your agent's tool/function definitions, or a directory to search. It reads OpenAI function/tools schemas, MCP `tools/list` output, and bare `{ name, description, parameters }` arrays.
+`<path>` can be a JSON file of your agent's tool/function definitions or a directory to search. It parses OpenAI function/tools schemas, Model Context Protocol (MCP) `tools/list` outputs, and standard `{ name, description, parameters }` JSON arrays — and it reads agent **source code** in Python, JavaScript, and TypeScript, recognizing LangChain `@tool` decorators, MCP `server.tool()` registrations, and Vercel AI SDK / Genkit `tool({ ... })` definitions.
 
-It runs read-only. No signup, no server, no telemetry. Nothing leaves your machine, and the source is right here.
+*`mc scan` is fully open-source, read-only, and runs entirely offline. No signup, no server, and no telemetry required.*
 
-## What it does
+---
 
-It classifies every tool your agent exposes by how much harm it can do with no human checking, then cross-references the [Agent Incident Database](../../incidents): 41 real, sourced, reproduced AI-agent disasters. Every finding names the actual incident your setup resembles, not a generic warning.
+## 🔍 How It Works
 
-A `CATASTROPHIC` finding is a call your agent can make on its own that does serious, often unrecoverable harm: deleting data, moving money, committing a binding decision. The fix is a deny-by-default gate, which the paid, self-hosted [MakerChecker](https://github.com/sammysltd/makerchecker) enforces in production with an audit a regulator can verify.
+`mc scan` parses your agent's tools and classifies each capability by risk profile. It then checks these capabilities against the [Agent Incident Database](../../incidents)—a database of 41 real, documented AI agent failures (e.g., data loss, runaway execution, unauthorized financial transactions).
 
-## What it won't catch
+- **CATASTROPHIC:** Actions that cause irreversible harm (e.g., deleting databases, executing arbitrary code, moving funds or on-chain value).
+- **HIGH / MEDIUM:** Actions with significant but bounded impact (e.g., sending emails, writing to files, querying databases).
 
-It reads tool definitions, not your live runtime policy. It does not find prompt-injection in your data or logic bugs. It finds what your agent can do on its own, which is the thing most teams have never actually looked at.
+Beyond individual tools, `mc scan` also flags **composition risks** — capabilities that are safe alone but lethal together. A tool that reads untrusted content (a webpage, an inbox, an IPFS document) paired with one that runs a shell command is a remote-code-execution channel; paired with one that moves money or places orders, it is a drain; a sensitive reader paired with an external sender is a zero-click exfiltration path. Each pair is named against the real incident it resembles.
 
-## `--llm` deep scan (opt-in)
-
-The default scan is deterministic and offline. With `--llm`, the ambiguous tools — the ones static signatures could not confidently place — are additionally sent to the Anthropic API for a probabilistic second opinion:
+To resolve findings and secure your agent, you can generate a deny-by-default policy file:
 
 ```bash
-ANTHROPIC_API_KEY=sk-... npx @makerchecker/scan <path> --llm
+npx @makerchecker/scan init .   # generates mc-policy.json
 ```
 
-An LLM verdict can raise a finding's severity or explain what an unclearly-named tool actually enables; it can never lower a static severity. Findings the model assessed are labeled `LLM-assessed` in every output, so you always know which claims are reproducible and which are a model's judgment.
+Once a tool is explicitly mapped to a policy rule in `mc-policy.json`, `mc scan` recognizes it as governed. This same configuration file can be ingested by the self-hosted [MakerChecker server](../../README.md) to enforce role-based gates in production.
 
-**Privacy caveat:** `--llm` sends tool definitions and function-body snippets to the Anthropic API. Without the flag, nothing ever leaves your machine.
+---
 
-## Run it in CI
+## 🔧 Generate Governance with `--fix`
 
-Fail the build the moment your agent gains a `CATASTROPHIC` capability that no gate protects. Copy [`.github-workflow-template.yml`](./.github-workflow-template.yml) to `.github/workflows/mc-scan.yml`, or add the composite action directly:
+`init` writes a policy; `--fix` writes the code. It generates a ready-to-run governance scaffold built on the [`@makerchecker/embedded`](../embedded) primitives, tailored to exactly what the scan flagged:
+
+```bash
+npx @makerchecker/scan . --fix   # writes mc-governance.mjs
+```
+
+The generated module encodes the fix directly: **deny-by-default**, every high-risk capability held by a separate `risk-desk` role (so the agent structurally cannot approve its own dangerous call), and each composition pair enforced as a role conflict so no single role holds both halves of an exfiltration or RCE channel. Install the runtime, replace each executor placeholder with your real tool, and call the governed wrappers instead of the raw ones:
+
+```bash
+npm i @makerchecker/embedded
+```
+
+A call the agent was not granted is denied before any side effect (`skill_not_granted`); a high-risk call additionally needs a preceding gate decided by a separate party. It is the same enforcement engine the self-hosted [MakerChecker server](../../README.md) runs in production.
+
+---
+
+## 🛠️ CI/CD Integration
+
+You can easily gate pull requests or builds if a new, ungoverned catastrophic capability is introduced:
+
+```bash
+npx @makerchecker/scan . --fail-on CATASTROPHIC
+```
+
+### GitHub Actions Workflow
+
+Add the composite action directly to your workflow:
 
 ```yaml
 # .github/workflows/mc-scan.yml
-name: mc scan
+name: mc-scan
 on: [push, pull_request]
 permissions:
   contents: read
@@ -51,32 +76,55 @@ jobs:
       - uses: actions/checkout@v4
       - uses: makerchecker/scan@v0
         with:
-          path: .                 # your tool/function definitions
-          fail-on: CATASTROPHIC   # exit non-zero on ungoverned catastrophic tools
+          path: .
+          fail-on: CATASTROPHIC
 ```
 
-No install and nothing to configure — the action runs the same `npx @makerchecker/scan` you run locally, read-only, on the runner. Prefer no action at all? One line works:
+Alternatively, run it via a single-line shell step:
 
 ```yaml
 - run: npx --yes @makerchecker/scan . --fail-on CATASTROPHIC
 ```
 
-The job also writes a shareable Markdown results card to the GitHub Step Summary. To turn a red build green, generate a deny-by-default policy and commit it:
+The action generates a clean Markdown summary card in your GitHub step overview.
+
+---
+
+## 🧠 Optional `--llm` Deep Scan (Opt-in)
+
+While the default scan is deterministic and local, you can opt-in to `--llm` mode to perform semantic analysis on ambiguous tool definitions or source files.
+
+- **Tool Re-ranking (Mode A):** Uses an LLM to evaluate ambiguously named tools that static signatures might miss or misclassify. It can escalate risk severity but will *never* lower a deterministic static rating.
+- **Source Code Scanner (Mode B):** Scans actual function code to locate latent capabilities that are not formally exposed as schema tools (e.g., helper functions or wrappers). It strictly requires the model to quote exact line numbers and match them against verifiable calls.
+
+### Configuration & Providers
+
+The `--llm` scan supports Anthropic, OpenAI, OpenRouter, Together, Groq, Ollama, and any OpenAI-compatible endpoint. Provider, model, and key are all configurable (via flag, environment variable, or the `mc-policy.json` `llm` block), and pointing it at a local Ollama keeps the analysis fully private:
 
 ```bash
-npx @makerchecker/scan init .   # writes mc-policy.json
+# Anthropic (Default)
+export ANTHROPIC_API_KEY=sk-...
+npx @makerchecker/scan . --llm
+
+# OpenAI
+export OPENAI_API_KEY=sk-...
+npx @makerchecker/scan . --llm --llm-provider openai --llm-model gpt-4o-mini
+
+# Fully local/private with Ollama
+ollama pull qwen2.5-coder:7b
+npx @makerchecker/scan . --llm --llm-provider ollama
 ```
 
-Every dangerous tool starts gated. The scan reads that file and shows those tools as governed (green); the self-hosted [MakerChecker](https://github.com/sammysltd/makerchecker) engine enforces the *exact same file* in production. One file is both your scan config and your governance policy.
+A cloud run prints a one-line notice of where data is being sent before it starts; a local provider (`--llm-provider ollama`) sends nothing off your machine.
 
-## The status badge (opt-in)
+*Note: LLM-assessed findings are non-deterministic, so they never affect the `--fail-on` exit-code gate — a run with and without `--llm` returns the same exit code, so CI never goes flaky.*
 
-Once the workflow above is green on your default branch, add a badge that certifies nothing your agent does runs unchecked. It is opt-in and driven entirely by your own CI run — there is no MakerChecker server involved, nothing phones home, and the badge only turns green when *your* `mc scan` job passes.
+---
 
-Markdown:
+## 📈 Status Badge (Opt-in)
+
+Once your CI workflow is green on your default branch, you can add a status badge to your repository's README to show your agent's governance status:
 
 ```markdown
 [![mc scan: certified](https://github.com/OWNER/REPO/actions/workflows/mc-scan.yml/badge.svg?branch=main)](https://github.com/OWNER/REPO/actions/workflows/mc-scan.yml)
 ```
-
-Replace `OWNER/REPO` with your repository. The badge is GitHub's native workflow-status badge for the `mc scan` job: green is a certified scan, meaning the run found no ungoverned tool your agent can fire on its own (every dangerous tool is gated by an `mc-policy.json` entry); red means one slipped in. It is a claim you can back — the run log shows exactly which tools were scanned and which incident each resembles.

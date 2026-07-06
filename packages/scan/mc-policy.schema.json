@@ -71,6 +71,7 @@
           "verbs": { "type": "array", "items": { "type": "string" } },
           "argHints": { "type": "array", "items": { "type": "string" } },
           "strongVerbs": { "type": "array", "items": { "type": "string" } },
+          "nameOnlyVerbs": { "type": "array", "items": { "type": "string" }, "description": "Verbs matched only as a whole token in the tool NAME, never in description/params prose." },
           "severity": { "type": "string", "enum": ["CATASTROPHIC", "HIGH", "MEDIUM"] },
           "action": { "type": "string" },
           "resembles": {
@@ -107,6 +108,33 @@
         }
       },
       "default": []
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional defaults for the opt-in --llm deep scan. Never put an API key here — keys come only from an environment variable or --llm-key, so this file stays committable.",
+      "properties": {
+        "mode": { "type": "string", "enum": ["tools", "code", "both"], "default": "both" },
+        "provider": {
+          "type": "string",
+          "enum": ["anthropic", "openai", "openrouter", "together", "groq", "ollama", "openai-compatible"]
+        },
+        "model": { "type": "string" },
+        "baseUrl": { "type": "string" },
+        "jsonMode": { "type": "boolean" },
+        "gateCi": { "type": "boolean", "description": "Let VERIFIED code-scan findings affect the CI exit code. Default false (LLM output is non-reproducible)." },
+        "codeScan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxFiles": { "type": "integer" },
+            "windowLines": { "type": "integer" },
+            "maxBytesPerChunk": { "type": "integer" },
+            "maxChunks": { "type": "integer" },
+            "maxFindings": { "type": "integer" }
+          }
+        }
+      }
     }
   }
 }
