@@ -1,21 +1,25 @@
-# Agent Incident Database (AID)
+<div align="center">
 
-Real cases where an AI agent or an automated system took an action it should not
-have been able to take, and someone paid for it. Agents that deleted production
-databases, moved money, filed fabricated court citations, and denied medical
-care.
+# 🗂️ Agent Incident Database (AID)
 
-Every entry has the primary sources so you can check it yourself, and a
-reproduction you can run.
+### Real AI-agent failures — sourced, reproduced, and citable by ID.
 
-Cite an incident by its id, like `AID-2023-0002`.
+A catalogue of cases where an AI agent or an automated system took an action it should never have been able to take, and someone paid for it: deleting production databases, moving money, filing fabricated court citations, denying medical care. Every entry carries its primary sources so you can check it yourself, and a reproduction you can run.
+
+[![Incidents](https://img.shields.io/badge/incidents-41-informational)](index.json)
+[![Span](https://img.shields.io/badge/span-2010%E2%80%932026-informational)](index.json)
+[![Reproductions](https://img.shields.io/badge/reproductions-runnable-brightgreen)](../examples)
+
+</div>
+
+> [!TIP]
+> **Browse the catalogue** — jump to the [Incidents table](#incidents) below, or read the machine-readable [index.json](index.json). Cite any case by its id, like `AID-2023-0002`.
 
 - **Machine-readable registry:** [index.json](index.json)
 - **Entry schema:** [schema.json](schema.json)
 - **Add or correct an incident:** [CONTRIBUTING.md](CONTRIBUTING.md)
-- **41 incidents** catalogued.
 
-## Run a reproduction
+## 🔁 Run a reproduction
 
 Each incident has a reproduction under [`examples/`](../examples). Run one:
 
@@ -75,7 +79,7 @@ end.
 | [`AID-2012-0001`](entries/AID-2012-0001.md) | August 1, 2012 | Knight Capital $440M Runaway Trading Loss | Runaway execution | critical |
 | [`AID-2010-0001`](entries/AID-2010-0001.md) | May 6, 2010 | 2010 Flash Crash triggered by automated sell algorithm | Runaway execution | critical |
 
-## Controls that would have blocked these
+## 🛡️ Controls that would have blocked these
 
 Every incident maps to one or more structural controls. Across the catalogue:
 

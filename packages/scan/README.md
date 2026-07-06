@@ -1,16 +1,25 @@
-# @makerchecker/scan
+<div align="center">
 
-`mc scan` is a zero-dependency static analyzer for AI agent tool definitions. It scans your local codebase or schemas to discover what capabilities your agent has access to, classifies their risk levels, and cross-references them against a catalog of 41 real-world agent incidents.
+# 🔍 mc scan
 
-Run it on any agent project to audit capabilities, identify potential vulnerabilities, and generate a deny-by-default security policy.
+### Find what your AI agent can do on its own — before anyone can stop it.
 
-```bash
-npx @makerchecker/scan <path>
-```
+`mc scan` reads your agent's tools and source code, classifies every action by its risk, and generates the governance code to lock it down. Zero dependencies, fully offline.
 
-`<path>` can be a JSON file of your agent's tool/function definitions or a directory to search. It parses OpenAI function/tools schemas, Model Context Protocol (MCP) `tools/list` outputs, and standard `{ name, description, parameters }` JSON arrays — and it reads agent **source code** in Python, JavaScript, and TypeScript, recognizing LangChain `@tool` decorators, MCP `server.tool()` registrations, and Vercel AI SDK / Genkit `tool({ ... })` definitions.
+[![npm](https://img.shields.io/npm/v/@makerchecker/scan?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/scan)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+[![Offline](https://img.shields.io/badge/telemetry-none-brightgreen)](#)
 
-*`mc scan` is fully open-source, read-only, and runs entirely offline. No signup, no server, and no telemetry required.*
+</div>
+
+> [!TIP]
+> **Run it now** — no install, no signup, nothing leaves your machine:
+> ```bash
+> npx @makerchecker/scan .
+> ```
+
+Point it at a JSON file of your agent's tool/function definitions or a whole directory. It reads OpenAI function/tools schemas, Model Context Protocol (MCP) `tools/list` output, and agent **source code** in Python, JavaScript, and TypeScript — LangChain `@tool` decorators, MCP `server.tool()` registrations, and Vercel AI SDK / Genkit `tool({ ... })` definitions. Read-only, offline, no telemetry.
 
 ---
 

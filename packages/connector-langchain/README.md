@@ -1,6 +1,17 @@
-# @makerchecker/connector-langchain
+<div align="center">
 
-Governs a LangChain StructuredTool with MakerChecker. `governLangChainTool` returns a tool with the original name and schema. Every `invoke()` runs a check before the tool body and records the result to the hash-chained audit log; a denied check throws `GovernanceDeniedError` before the tool body runs.
+# 🔗 @makerchecker/connector-langchain
+
+### Put a governance gate in front of every LangChain tool call.
+
+Wrap a LangChain `StructuredTool` and every `invoke()` runs a deny-by-default check before the tool body and records the result to the hash-chained audit log. Same name, same schema — it drops straight into your agent.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/connector-langchain?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/connector-langchain)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+
+</div>
+
+`governLangChainTool` returns a tool with the original name and schema. Every `invoke()` runs a check before the tool body and records the result to the hash-chained audit log; a denied check throws `GovernanceDeniedError` before the tool body runs.
 
 ## Install
 

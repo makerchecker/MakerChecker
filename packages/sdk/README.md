@@ -1,6 +1,15 @@
-# @makerchecker/sdk
+<div align="center">
 
-Typed TypeScript client for the MakerChecker API, wrapping the HTTP API of [`packages/server`](../server). Exports `governedTool`, which routes a tool function through a proxy session so each call is authorized and recorded. ES module on the host `fetch`; runs on Node 18+ and in browsers.
+# 🧰 @makerchecker/sdk
+
+### Wrap any tool with `governedTool` so every agent call is authorized and recorded.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/sdk?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/sdk)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+
+</div>
+
+Typed TypeScript client for the MakerChecker API, wrapping the HTTP API of [`packages/server`](../server). Exports `governedTool`, which routes a tool function through a proxy session so each call is authorized and recorded. ES module on the host `fetch`; runs on Node 22+ and in browsers.
 
 ## Install
 

@@ -1,9 +1,15 @@
-# @makerchecker/validation-kit
+<div align="center">
 
-**The GxP validation package, generated from proof.** Turn a signed audit bundle
-into a Computer System Validation (IQ/OQ/PQ) report and a Requirements
-Traceability Matrix — deterministically, with every result re-derived from
-recorded events and cited to the audit `seq` it rests on.
+# 📋 @makerchecker/validation-kit
+
+### Turn a signed audit bundle into a GxP validation report your QA function can sign.
+
+`@makerchecker/validation-kit` re-derives an IQ/OQ/PQ Computer System Validation report and a Requirements Traceability Matrix from recorded audit events — deterministically, every result cited to the audit `seq` it rests on. No LLM, no network, no producer access.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/validation-kit?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/validation-kit)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+
+</div>
 
 This is the artifact a regulated QA function (pharma, CRO, medtech) needs to
 deploy an AI agent under **21 CFR Part 11 / EU Annex 11 / GAMP 5**: not a claim

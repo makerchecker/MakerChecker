@@ -1,20 +1,33 @@
-# MakerChecker
+<div align="center">
+
+# 🛡️ MakerChecker
+
+### The open-source security layer for AI agents.
+
+Deny-by-default enforcement, human approvals, and a cryptographically signed audit trail — so your agent runs only what it's granted and **provably can't approve its own work.**
 
 [![CI](https://github.com/sammysltd/makerchecker/actions/workflows/ci.yml/badge.svg)](https://github.com/sammysltd/makerchecker/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/sammysltd/makerchecker?label=release)](https://github.com/sammysltd/makerchecker/releases/latest)
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20core%20%2B%20Apache--2.0%20SDK-informational)](LICENSING.md)
+[![Stars](https://img.shields.io/github/stars/sammysltd/makerchecker?style=social)](https://github.com/sammysltd/makerchecker)
 
-**Website: [makerchecker.ai](https://makerchecker.ai)**
+**[Website](https://makerchecker.ai) · [Live Demo](https://makerchecker.ai/demo/) · [`mc scan`](packages/scan) · [Docs](docs/)**
 
-MakerChecker is an open-source security and governance toolkit for AI agents. It provides a local static tool scanner (`mc scan`) for identifying risky agent capabilities, and a self-hosted API gateway to enforce role-based access control (RBAC), human-in-the-loop approvals, and cryptographically signed audit trails.
+</div>
 
-Your agents keep running in their existing frameworks (LangChain, Claude SDK, CrewAI, etc.). MakerChecker acts as a secure checkpoint in front of them and an immutable ledger behind them.
+> [!TIP]
+> **See what your agent can do unchecked in one command** — no signup, nothing leaves your machine:
+> ```bash
+> npx @makerchecker/scan .
+> ```
+
+MakerChecker keeps your agents running in their existing frameworks (LangChain, Claude SDK, CrewAI) and adds a **secure checkpoint in front of them and an immutable ledger behind them.** An agent acts only through a **role**, runs only the skills its role was **granted** (deny-by-default), cannot exceed its limits, and provably cannot approve its own work — and every action commits to a hash-chained, Ed25519-signed audit log anyone can verify offline.
 
 ---
 
 ## ⚡ Quick Start: Scan an Agent in 5 Seconds
 
-Evaluate your agent's safety profile locally using `mc scan`. It reads your agent's tool definitions and cross-references them against the **Agent Incident Database** (a catalogue of 41 real, documented AI agent failures).
+`mc scan` finds what your agent can do on its own and classifies each action by its risk. It matches your agent's tools and source code against known risk patterns — destroying data, moving money or on-chain value, running arbitrary shell commands, exfiltrating secrets, committing binding decisions, and the combinations that are safe alone but lethal together (an untrusted reader wired to a shell or a wallet). Beyond flagging them, it suggests the fix, generates deny-by-default governance code for you, and can bring in an LLM for a deeper pass.
 
 Run it on any directory containing tool definitions, agent source code (Python/JS/TS), or tools JSON:
 
@@ -22,7 +35,7 @@ Run it on any directory containing tool definitions, agent source code (Python/J
 npx @makerchecker/scan .
 ```
 
-*Nothing leaves your machine.* It runs entirely offline and requires no configuration. Add `--fail-on CATASTROPHIC` to enforce this check in your CI/CD pipeline, or `--fix` to generate a ready-to-run governance scaffold from the findings. Detailed documentation is in [`packages/scan`](packages/scan/README.md).
+*Nothing leaves your machine.* It runs entirely offline and requires no configuration — add `--fail-on CATASTROPHIC` to gate CI, `--fix` to write the governance code, or `--llm` for the deeper LLM pass. Detailed documentation is in [`packages/scan`](packages/scan/README.md).
 
 ---
 

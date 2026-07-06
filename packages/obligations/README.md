@@ -1,12 +1,24 @@
-# @makerchecker/obligations
+<div align="center">
 
-**Control-mapping as code.** Deterministic, offline mapping of a signed
-MakerChecker audit bundle to named regulatory obligations — emitting, per
-clause, **MET / NOT_EVIDENCED / NOT_APPLICABLE** with the exact audit
-`seq` numbers that satisfy it.
+# ⚖️ @makerchecker/obligations
 
-No LLM, no network, no producer access. The mapping is machine-checkable code an
-examiner can run against a real run's evidence, not prose in a PDF.
+### Prove your AI agent met the regulation — clause by clause, straight from the evidence.
+
+`mc obligations` maps a signed MakerChecker audit bundle to named regulatory obligations (21 CFR Part 11, EU Annex 11, GAMP 5, HIPAA 164.312), emitting **MET / NOT_EVIDENCED / NOT_APPLICABLE** per clause with the exact audit `seq` numbers that satisfy it. No LLM, no network, no producer access.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/obligations?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/obligations)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+
+</div>
+
+> [!TIP]
+> **See the frameworks it maps** — no bundle required:
+> ```bash
+> npx @makerchecker/obligations list-profiles
+> ```
+
+The mapping is machine-checkable code an examiner can run against a real run's
+evidence, not prose in a PDF.
 
 ## Profiles
 
