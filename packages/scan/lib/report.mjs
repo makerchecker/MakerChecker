@@ -93,8 +93,11 @@ function heroPanel(f, style, pad) {
   const W = 74; // interior text width
   const border = (s) => style(c, s);
 
+  const badge = f.discoveredBy === 'llm-code-scan'
+    ? ' (undeclared capability — found by --llm code scan)'
+    : f.assessedBy === 'llm' ? ' (LLM-assessed)' : '';
   const content = [];
-  content.push((f.action || 'runs with no one checking it') + (f.assessedBy === 'llm' ? ' (LLM-assessed)' : ''));
+  for (const l of wrapArr((f.action || 'runs with no one checking it') + badge, W)) content.push(l);
   content.push('');
   if (f.resembles) {
     for (const l of wrapArr(`Resembles ${f.resembles.title}.`, W)) content.push(l);
@@ -113,6 +116,10 @@ function heroPanel(f, style, pad) {
   if (f.modelControlled) {
     content.push('');
     for (const l of wrapArr(`Model-controlled: ${f.modelControlled.note}.`, W)) content.push(l);
+  }
+  if (f.selfApproval) {
+    content.push('');
+    for (const l of wrapArr(`Self-approval: ${f.selfApproval.note}.`, W)) content.push(l);
   }
   content.push('');
   content.push(`Seen in: ${f.tool.source || 'unknown source'}`);
@@ -172,7 +179,7 @@ export function renderTerminal(findings, meta, pairs = []) {
   const out = [];
 
   const ungoverned = findings
-    .filter((f) => !f.governedBy && f.severity !== 'OK')
+    .filter((f) => !f.governedBy && f.severity !== 'OK' && !f.unverified)
     .sort(
       (a, b) =>
         SEV_RANK[b.severity] - SEV_RANK[a.severity] ||
@@ -319,7 +326,7 @@ export function renderJson(findings, meta, pairs = []) {
  */
 export function renderMarkdown(findings, meta, pairs = []) {
   const ungoverned = findings
-    .filter((f) => !f.governedBy && f.severity !== 'OK')
+    .filter((f) => !f.governedBy && f.severity !== 'OK' && !f.unverified)
     .sort(
       (a, b) =>
         SEV_RANK[b.severity] - SEV_RANK[a.severity] ||
@@ -348,6 +355,7 @@ export function renderMarkdown(findings, meta, pairs = []) {
     out.push(
       `> **Worst finding:** \`${worst.tool.name}\` ${worst.action || 'runs with no one checking it'}${worst.assessedBy === 'llm' ? ' (LLM-assessed)' : ''} — resembles ${inc}.`,
     );
+    if (worst.selfApproval) out.push(`> **Self-approval:** ${worst.selfApproval.note}.`);
     out.push('');
   }
 

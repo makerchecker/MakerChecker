@@ -50,8 +50,15 @@ const READ_LEAD = new Set([
 ]);
 const NAME_SUPPRESSIBLE = new Set([
   'autonomous-spend', 'move-money', 'execute-trade', 'bind-commitment',
-  'send-message', 'destroy-data', 'run-shell', 'commit-decision',
+  'send-message', 'destroy-data', 'run-shell', 'commit-decision', 'web3-value-movement',
 ]);
+// web3-value-movement guards. A read token anywhere in the name (get_quote,
+// check_allowance, deposit_address) is a read, not a transfer. And an ambiguous
+// crypto hint (token/position) inside an auth/identity context (send_reset_token,
+// send_position_update over GPS) is not on-chain value movement.
+const WEB3_READ_TOKENS = new Set([...READ_LEAD, 'quote', 'quoter', 'router', 'balance', 'allowance', 'price', 'info', 'status', 'decode', 'calc', 'holdings', 'report', 'summary', 'signal', 'history', 'trending', 'chart', 'metadata']);
+const WEB3_AMBIG_HINTS = new Set(['token', 'tokens', 'position', 'native']);
+const AUTH_CTX_RE = /\b(email|password|otp|verification|verify|reset|magic[- ]?link|login|session|loyalty|reward|coupon|voucher|api[_ ]?key|apikey|access[_ ]?token|refresh[_ ]?token|bearer|jwt|sms|invite|newsletter|gps|location|coordinate|dispatch|ticket|crowd)\b/i;
 // Simulation / dry-run tokens. A tool named submit_backtest, paper_trade,
 // simulate_order, or mock_send runs against synthetic state — it commits nothing
 // real, so it must not match a live money/trade/message signature by name. Same
@@ -78,10 +85,20 @@ const SIM_DESC_RE = /\b(paper[- ]?trad|mock[- ]?(trad|order|account|api|payment|
 // review, not the CATASTROPHIC "wired straight to a live venue" claim.)
 const APPROVAL_PARAM_RE = /^(approval_token|approval|authorization|authorization_token|auth_token|approved_by|approver|sign_?off|signoff|approval_id)$/;
 
+// A confirmation/override parameter the MODEL itself sets in the same tool call.
+// Unlike APPROVAL_PARAM_RE (an out-of-band token the developer built), this is a
+// boolean the calling LLM flips on itself — a prompt injection sets it to true.
+// This is the QuantDinger place_quick_order(confirm_live_trading=...) shape: the
+// maker and the checker are the same actor. It NEVER downgrades a finding; it
+// raises a distinct "the model can approve itself" note.
+const SELF_APPROVAL_PARAM_RE = /^confirm(ed|ation)?(_|$)|^(force|yes|i_am_sure|auto_approve|skip_confirm(ation)?|acknowledge)$/;
+// The signatures where a model-settable confirmation flag is the self-approval bug.
+const SELF_APPROVABLE_SIGS = new Set(['move-money', 'execute-trade', 'autonomous-spend', 'destroy-data', 'run-shell', 'web3-value-movement']);
+
 // Signatures where a model-chosen amount/recipient turns the finding into a
 // concrete, demonstrable bug (not just an ungated capability).
 const MODEL_CONTROLLED_SIGS = new Set([
-  'autonomous-spend', 'move-money', 'execute-trade', 'bind-commitment', 'send-message',
+  'autonomous-spend', 'move-money', 'execute-trade', 'bind-commitment', 'send-message', 'web3-value-movement',
 ]);
 // A parameter that names a MONETARY / quantity value the model fills in freely.
 const VALUE_PARAM_RE = /^(amount|amt|price|total|subtotal|sum|cost|fee|value|balance|qty|quantity|units|shares|notional|refund_amount|charge_amount|transfer_amount|payment_amount|withdraw(al)?_amount)$/;
@@ -136,7 +153,12 @@ function makeMatcher(tool) {
 function signatureMatches(sig, m, tokens) {
   const { verbAppears, argAppears } = m;
   const verbs = Array.isArray(sig?.verbs) ? sig.verbs : [];
-  const matchedVerbs = verbs.filter(verbAppears);
+  // nameOnlyVerbs match ONLY as a whole name token, never in description/params
+  // prose: `format` fires on format_disk but not on "(format: YYYY-MM-DD)".
+  const nameOnlyVerbs = Array.isArray(sig?.nameOnlyVerbs) ? sig.nameOnlyVerbs : [];
+  const matchedVerbs = verbs
+    .filter(verbAppears)
+    .concat(nameOnlyVerbs.filter((v) => tokens.has(lc(v))));
   if (!matchedVerbs.length) return false;
   // Distinct-token rule: the confirming argHint must be a DIFFERENT token than
   // the one that satisfied the verb. A single word that lives in both lists
@@ -157,7 +179,7 @@ function signatureMatches(sig, m, tokens) {
 // claim; what its body CALLS is evidence. A body signal can only RAISE severity —
 // a blandly-named tool that shells out is treated like a shell tool — never lower
 // it. Each kind maps to the builtin signature whose incident it resembles.
-const BODY_MARKERS = [
+export const BODY_MARKERS = [
   { kind: 'shell', sigId: 'run-shell', severity: 'CATASTROPHIC',
     re: /\bsubprocess\.\w+|\bos\.system\b|\bos\.popen\b|child_process|\bexecSync\b|\bexec\s*\(|\beval\s*\(/ },
   { kind: 'destroy', sigId: 'destroy-data', severity: 'CATASTROPHIC',
@@ -169,6 +191,15 @@ const BODY_MARKERS = [
     re: /\brequests\.post\b|\bfetch\s*\(|\baxios\b|\bsmtplib\b|\bboto3\b|\burllib\.request\b|\bhttpx\b/ },
   { kind: 'write', sigId: 'destroy-data', severity: 'MEDIUM',
     re: /\bopen\s*\([^)\n]*['"][wa]b?['"]|\bwriteFileSync\b|\bfs\.writeFile\b|\bfs\.appendFile\b/ },
+  // On-chain write: a raw signed transaction / contract write settles irreversibly.
+  // Backstops the name-anchored web3 signature and recovers terse tools whose name
+  // carries no crypto hint (executeSwap, fund_account) but whose body sends a tx.
+  { kind: 'onchain-write', sigId: 'web3-value-movement', severity: 'CATASTROPHIC',
+    re: /walletClient\.sendTransaction|\.sendTransaction\s*\(|\bwriteContract\s*\(|contract\.write\b|signTypedData|eth_sendRawTransaction|eth_sendTransaction|eth_signTransaction|\.signTransaction\s*\(|sendUserOperation/ },
+  // Broker order submission (Alpaca / IBKR). ccxt's bare create_order is EXCLUDED:
+  // it collides with e-commerce carts.
+  { kind: 'broker-order', sigId: 'execute-trade', severity: 'CATASTROPHIC',
+    re: /\.submit_order\s*\(|\.place_order\s*\(|\.placeOrder\s*\(|\bib_insync\b|\balpaca_trade_api\b|tradeapi\.submit_order/ },
 ];
 
 // A dangerous action inside a disposable sandbox (an e2b cloud VM, a container,
@@ -178,7 +209,7 @@ const BODY_MARKERS = [
 // directory" about a container. Marker in the tool body OR the surrounding file.
 // Note the leading \b but no trailing \b on e2b/daytona: matches "E2BExecTool"
 // and "DaytonaPythonTool" (name-derived) as well as "from e2b import".
-const SANDBOX_RE = /\be2b|@e2b\/|\bdaytona|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/i;
+export const SANDBOX_RE = /\be2b|@e2b\/|\bdaytona|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/i;
 
 // An in-body human gate before the dangerous call: a confirm prompt, a yes/no,
 // an approval check. Conservative — cross-scope UI gates (an editor's
@@ -259,6 +290,15 @@ export function classify(tool, signatures, policy) {
     // action isn't real. Skip (body evidence below can still re-raise it).
     if (NAME_SUPPRESSIBLE.has(sig.id)
       && (tokenList.some((t) => SIMULATION_TOKENS.has(t)) || SIM_DESC_RE.test(descLc))) continue;
+    // web3-value-movement: a read token anywhere in the name is a read (get_quote,
+    // renzo_get_deposit_address, check_allowance); and when the only crypto hint is
+    // ambiguous (token/position) in an auth/identity context (send_reset_token,
+    // send_position_update over GPS), it is not on-chain value movement.
+    if (sig.id === 'web3-value-movement') {
+      if (tokenList.some((t) => WEB3_READ_TOKENS.has(t))) continue;
+      const hasHard = (sig.argHints || []).some((h) => !WEB3_AMBIG_HINTS.has(lc(h)) && matcher.argAppears(h));
+      if (!hasHard && AUTH_CTX_RE.test(`${toolName} ${descLc}`)) continue;
+    }
     const rank = SEV_RANK[sig.severity] ?? 0;
     if (best === null || rank > (SEV_RANK[best.severity] ?? 0)) best = sig;
   }
@@ -279,7 +319,14 @@ export function classify(tool, signatures, policy) {
   // Body signals: evidence from the function body can RAISE severity (never
   // lower it). A blandly-named tool whose body shells out is a shell tool.
   if (typeof tool.body === 'string' && tool.body) {
-    const signals = detectBodySignals(tool.body, tool.bodyLine || 1);
+    let signals = detectBodySignals(tool.body, tool.bodyLine || 1);
+    // A READ-named tool (get_price, check_approval, get_quote) whose 60-line body
+    // window bleeds into a neighbouring method's writeContract/sendTransaction is
+    // not itself an on-chain mover. Honour the same read guard the name match uses,
+    // so body-snippet bleed can't manufacture a web3 CATASTROPHIC on a reader.
+    if (tokenList.some((t) => WEB3_READ_TOKENS.has(t))) {
+      signals = signals.filter((s) => s.sigId !== 'web3-value-movement');
+    }
     if (signals.length) {
       finding.evidence = signals.map(({ kind, marker, line }) => ({ kind, marker, line }));
       let top = signals[0];
@@ -298,6 +345,23 @@ export function classify(tool, signatures, policy) {
     }
   }
 
+  // Self-approval anti-pattern: a confirmation/override parameter the MODEL sets
+  // in its own tool call is not a gate — a prompt injection flips it to true. This
+  // is the QuantDinger place_quick_order(confirm_live_trading=...) shape. We FLAG
+  // it (never downgrade), and below we refuse to let an in-body check of that same
+  // model-supplied flag earn a mitigation downgrade.
+  if (SELF_APPROVABLE_SIGS.has(finding.signature)
+    && (finding.severity === 'HIGH' || finding.severity === 'CATASTROPHIC')
+    && Array.isArray(tool.params)) {
+    const selfParam = tool.params.map(lc).find((p) => SELF_APPROVAL_PARAM_RE.test(p));
+    if (selfParam) {
+      finding.selfApproval = {
+        param: selfParam,
+        note: `confirmation parameter "${selfParam}" is model-settable — the agent can approve itself`,
+      };
+    }
+  }
+
   // Sandbox / in-body gate: a dangerous action that can only reach a disposable
   // sandbox, or that is guarded by a confirm prompt in its own body, is not the
   // "wipes your real system" risk the incident implies. Downgrade one step and
@@ -309,7 +373,9 @@ export function classify(tool, signatures, policy) {
     // A tool named/described as an e2b/Daytona/sandbox executor is confined even
     // when we only have its JSON spec (no body to read the Sandbox.create call).
     const sandboxed = tool.sandboxed === true || detectSandbox(tool.body) || detectSandbox(`${tool.name} ${tool.description}`);
-    const gated = detectGate(tool.body);
+    // An in-body confirm check of a MODEL-settable flag is theatre, not a gate:
+    // the model set the flag, so checking it protects nothing. Refuse the downgrade.
+    const gated = detectGate(tool.body) && !finding.selfApproval;
     if (sandboxed || gated) {
       const reason = sandboxed ? 'runs inside a disposable sandbox' : 'guarded by an in-body confirmation';
       const lowered = finding.severity === 'CATASTROPHIC' ? 'HIGH' : 'MEDIUM';

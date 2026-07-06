@@ -21,7 +21,11 @@
 /**
  * @typedef {'high_risk_requires_gate'|'approval_gate'|'limit_violation'|'skill_not_granted'|'sod_violation'|'independent_citation_verification'} Control
  * @typedef {{ aid: string, title: string }} IncidentRef
- * @typedef {{ id: string, category: string, verbs: string[], argHints?: string[], strongVerbs?: string[], severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM', action: string, resembles: IncidentRef, alsoResembles?: IncidentRef[], control: Control, why: string }} Signature
+ * @typedef {{ id: string, category: string, verbs: string[], argHints?: string[], strongVerbs?: string[], nameOnlyVerbs?: string[], severity: 'CATASTROPHIC'|'HIGH'|'MEDIUM', action: string, resembles: IncidentRef, alsoResembles?: IncidentRef[], control: Control, why: string }} Signature
+ *
+ * `nameOnlyVerbs` match ONLY as a whole token in the tool NAME, never in the
+ * description or params. Use it for verbs that are common English words in prose
+ * ('format' as in "format: YYYY-MM-DD") but are dangerous as a name (format_disk).
  */
 
 /** @type {Signature[]} */
@@ -29,9 +33,12 @@ export const SIGNATURES = [
   {
     id: 'destroy-data',
     category: 'data-loss',
-    verbs: ['delete', 'drop', 'destroy', 'wipe', 'truncate', 'purge', 'rm', 'remove', 'erase', 'unlink', 'del', 'shred', 'clobber', 'overwrite', 'format', 'flush'],
+    verbs: ['delete', 'drop', 'destroy', 'wipe', 'truncate', 'purge', 'rm', 'remove', 'erase', 'unlink', 'del', 'shred', 'clobber', 'overwrite', 'flush'],
     argHints: ['table', 'database', 'db', 'record', 'row', 'file', 'path', 'volume', 'bucket', 'collection', 'index', 'directory', 'dir', 'blob', 'object', 'key', 'namespace', 'snapshot', 'backup', 'disk', 'drive', 'store', 'photos', 'home'],
     strongVerbs: ['delete', 'drop', 'destroy', 'wipe', 'truncate', 'purge', 'shred'],
+    // 'format' fires on a NAME token (format_disk) but must never match the word
+    // "format" in prose ("format: YYYY-MM-DD" in a docstring) — a verified FP.
+    nameOnlyVerbs: ['format'],
     severity: 'CATASTROPHIC',
     action: 'destroys data that cannot be recovered',
     resembles: { aid: 'AID-2025-0005', title: 'the Replit agent that deleted a production database during a code freeze' },
@@ -90,12 +97,14 @@ export const SIGNATURES = [
   {
     id: 'move-money',
     category: 'unauthorized-financial-action',
-    verbs: ['pay', 'transfer', 'wire', 'send', 'withdraw', 'charge', 'refund', 'swap', 'payout', 'remit', 'disburse', 'approvetransfer'],
+    // 'swap' moved to web3-value-movement (its only match on uniswap_check_approval
+    // was the word "swap" in prose — a read, not a transfer).
+    verbs: ['pay', 'transfer', 'wire', 'send', 'withdraw', 'charge', 'refund', 'payout', 'remit', 'disburse', 'approvetransfer'],
     // Money-SPECIFIC hints only: 'recipient'/'token'/'address' were dropped because
-    // an email recipient, an auth token, and an IP/email address are not payments —
-    // they pulled send_email/notify tools into a wire-transfer finding. 'wallet',
-    // 'iban', 'payee' remain as unambiguous money destinations.
-    argHints: ['amount', 'usd', 'eth', 'btc', 'wallet', 'account', 'card', 'invoice', 'notional', 'balance', 'iban', 'payee', 'sum'],
+    // an email recipient, an auth token, and an IP/email address are not payments.
+    // 'eth'/'btc'/'wallet' moved to web3-value-movement (they made a read like
+    // renzo_get_deposit_address read as a wire). 'iban'/'payee' remain as money dests.
+    argHints: ['amount', 'usd', 'account', 'card', 'invoice', 'notional', 'balance', 'iban', 'payee', 'sum'],
     strongVerbs: ['wire', 'withdraw', 'payout', 'remit', 'disburse'],
     severity: 'CATASTROPHIC',
     action: 'moves money out of your control',
@@ -107,6 +116,32 @@ export const SIGNATURES = [
     ],
     control: 'limit_violation',
     why: 'A payment or transfer is a one-way door. It needs a hard per-transaction cap, a per-run invocation cap (the kill switch), and a human on anything over the line. An agent that can move money and read untrusted input is a drain waiting for a prompt injection.',
+  },
+  {
+    // ON-CHAIN value movement (DeFi swaps, bridges, transfers, contract writes).
+    // FALSE-POSITIVE DISCIPLINE is extreme here: verbs is EMPTY and strongVerbs is
+    // EMPTY on purpose — every fire needs a distinct crypto argHint, because
+    // swap/bridge/mint/deposit/withdraw/stake collide with swap_image, bridge_call,
+    // mint_certificate, deposit_feedback, withdraw_consent. 'approve'/'sign' are
+    // NOT here (ERC-20 approve grants an allowance — moves no value; sign collides
+    // with sign_in); blind-signing is caught only by the onchain-write body marker.
+    // 'recipient'/'address' are NOT hints — a native-send docstring is textually
+    // identical to send_email. classify.mjs adds WEB3_READ_TOKENS + AUTH_CTX guards.
+    id: 'web3-value-movement',
+    category: 'unauthorized-financial-action',
+    verbs: [],
+    nameOnlyVerbs: ['swap', 'bridge', 'stake', 'unstake', 'mint', 'disperse', 'deposit', 'withdraw', 'borrow', 'repay', 'wrap', 'unwrap', 'fund', 'send', 'transfer', 'redeem', 'write'],
+    argHints: ['slippage', 'gas', 'gwei', 'onchain', 'erc20', 'erc721', 'tokenin', 'tokenout', 'amountin', 'amountout', 'calldata', 'txn', 'tx', 'rawtransaction', 'transaction', 'walletclient', 'signer', 'wallet', 'eth', 'btc', 'sol', 'usdc', 'usdt', 'dai', 'weth', 'defi', 'liquidity', 'collateral', 'pool', 'chain', 'chainid', 'dex', 'lp', 'staking', 'token', 'tokens', 'position', 'native'],
+    strongVerbs: [],
+    severity: 'CATASTROPHIC',
+    action: 'moves on-chain value (swap/bridge/transfer/deposit/contract write) that settles irreversibly with no chargeback',
+    resembles: { aid: 'AID-2026-0004', title: 'the Grok-connected wallet drained of $150K by a Morse-code prompt injection' },
+    alsoResembles: [
+      { aid: 'AID-2025-0007', title: 'the aixbt autonomous crypto agent drained of 55.5 ETH via injected dashboard prompts' },
+      { aid: 'AID-2024-0003', title: 'the Freysa autonomous agent tricked into releasing a $47K crypto prize pool' },
+    ],
+    control: 'limit_violation',
+    why: 'An on-chain transfer/swap/bridge is the hardest one-way door: it settles in seconds, no issuer can reverse it, and the amount and destination are model-chosen. It needs a hard per-transaction cap, a destination/contract allowlist, and a human held by a different actor than the proposer.',
   },
   {
     // SECURITIES trading, not commerce. FALSE-POSITIVE DISCIPLINE: the argHints
@@ -193,7 +228,7 @@ export const SIGNATURES = [
     // comment/call) need a real audience argHint (recipient, channel, customer,
     // public, an address); the specific ones (email/tweet/publish/slack/sms/dm)
     // are unambiguous enough to fire on the name alone.
-    verbs: ['email', 'message', 'post', 'publish', 'tweet', 'notify', 'reply', 'comment', 'dm', 'slack', 'sms', 'call'],
+    verbs: ['email', 'message', 'post', 'publish', 'tweet', 'notify', 'reply', 'comment', 'dm', 'slack', 'sms', 'call', 'broadcast', 'announce', 'announcement'],
     argHints: ['recipient', 'channel', 'body', 'subject', 'audience', 'customer', 'public', 'cc', 'bcc', 'phone', 'address'],
     strongVerbs: ['email', 'tweet', 'publish', 'slack', 'sms', 'dm'],
     severity: 'HIGH',

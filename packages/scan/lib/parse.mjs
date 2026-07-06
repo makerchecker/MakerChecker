@@ -82,6 +82,25 @@ export function parseTools(path) {
 
 // ---- directory walk ---------------------------------------------------------
 
+/**
+ * Enumerate the CODE files under `root` using the same skip rules as parseTools
+ * (node_modules/dist/test dirs, dotfiles, symlinks, test/spec files, size cap).
+ * Exported for the --llm code-scan (lib/codescan.mjs) so file selection can never
+ * drift from discovery. Returns absolute paths.
+ * @param {string} root
+ * @returns {string[]}
+ */
+export function walkFiles(root) {
+  let abs, st;
+  try { abs = resolve(root); st = statSync(abs); } catch { return []; }
+  const files = [];
+  try {
+    if (st.isDirectory()) walk(abs, files);
+    else files.push(abs);
+  } catch { /* resilient */ }
+  return files.filter((f) => CODE_EXT.has(extname(f).toLowerCase()));
+}
+
 function walk(dir, out) {
   let entries;
   try {
@@ -139,7 +158,7 @@ function collectFromFile(file, rel, out) {
     }
     extractJson(data, rel, out);
   } else if (CODE_EXT.has(ext)) {
-    extractCode(content, rel, out);
+    extractCode(content, rel, out, ext);
   }
 }
 
@@ -197,6 +216,8 @@ function extractJson(data, source, out) {
 
 // Fields that make an object a function/tool definition rather than a named blob.
 const SCHEMA_KEYS = ['parameters', 'inputSchema', 'input_schema', 'args_schema', 'schema'];
+// Solidity ABI entry `type` values — used to reject contract-ABI JSON arrays.
+const ABI_ENTRY_TYPES = new Set(['function', 'event', 'error', 'constructor', 'fallback', 'receive']);
 
 function itemToTool(item, source, out, { requireSchema = false } = {}) {
   if (!item || typeof item !== 'object') return;
@@ -211,6 +232,17 @@ function itemToTool(item, source, out, { requireSchema = false } = {}) {
 
   const name = typeof obj.name === 'string' ? obj.name.trim() : '';
   if (!name) return;
+
+  // Solidity ABI entry, not a tool: an abi/*.json array holds { type:'function',
+  // name, inputs, outputs, stateMutability } objects — contract metadata whose
+  // name (Trade, withdraw, buyCurvesToken) reads as a money-mover. The code path
+  // guards these in objectLiteralTools; this is the JSON-path equivalent. (OpenAI
+  // { type:'function', function:{...} } is unwrapped above, so obj.type is unset there.)
+  if (typeof obj.type === 'string' && ABI_ENTRY_TYPES.has(obj.type)
+    && (Array.isArray(obj.inputs) || Array.isArray(obj.outputs) || 'stateMutability' in obj)) {
+    return;
+  }
+  if ('stateMutability' in obj) return;
 
   // Agent / workflow GRAPH, not a tool: a node-and-link graph (AutoGPT agent
   // export, LangGraph, flow builders) has a `name` and an `input_schema` but its
@@ -249,7 +281,7 @@ const BODY_MAX_LINES = 60;
 // Kept in sync with classify.mjs SANDBOX_RE.
 const SANDBOX_RE = /\be2b|@e2b\/|\bdaytona|Sandbox\.create|CodeInterpreter|code_interpreter|codeInterpreter|\bpyodide\b|RestrictedPython|\bgvisor\b|\bfirecracker\b|\bnsjail\b|\bbubblewrap\b|\bfirejail\b|dockerode|docker\.from_env|DockerClient|\bwasmer\b|\bwasmtime\b/i;
 
-function extractCode(content, rel, out) {
+function extractCode(content, rel, out, ext = '') {
   const lineAt = makeLineAt(content);
   const lines = content.split('\n');
   // A sandbox is usually stood up once at module top (e.g. Sandbox.create()),
@@ -257,15 +289,19 @@ function extractCode(content, rel, out) {
   // every tool discovered here — classify() uses it to downgrade a dangerous
   // action that can only reach a disposable VM, not the user's real systems.
   const fileHasSandbox = SANDBOX_RE.test(content);
-  const push = (name, description, params, index) => {
+  const push = (name, description, params, index, endIndex) => {
     const n = (name || '').trim();
     if (!n) return;
     const line = lineAt(index);
     // Body snippet: up to BODY_MAX_LINES lines following the definition line,
     // truncated at the next top-level definition so one tool's snippet never
-    // bleeds into its neighbour's body (and claims its evidence).
+    // bleeds into its neighbour's body (and claims its evidence). When we know the
+    // definition's own end (a tool({...}) call's closing brace), cap there too so
+    // a factory-defined tool never absorbs the sibling defined right after it.
     const bodyLine = line + 1;
-    const raw = lines.slice(bodyLine - 1, bodyLine - 1 + BODY_MAX_LINES);
+    let endLine = bodyLine - 1 + BODY_MAX_LINES;
+    if (typeof endIndex === 'number') endLine = Math.min(endLine, lineAt(endIndex));
+    const raw = lines.slice(bodyLine - 1, endLine);
     const boundary = raw.findIndex(
       (l, i) => i > 0 && /^(?:@|(?:async\s+)?def |class |function |const |let |var |export )/.test(l),
     );
@@ -281,8 +317,9 @@ function extractCode(content, rel, out) {
 
   pyDecorators(content, push);
   pyToolConstructors(content, push);
+  jsToolConstructors(content, push);
   mcpRegistrations(content, push);
-  objectLiteralTools(content, push);
+  objectLiteralTools(content, push, ext);
 }
 
 // LangChain / MCP Python decorators: @tool, @tool("name"), @mcp.tool(), @app.tool()
@@ -295,10 +332,40 @@ function pyDecorators(content, push) {
     const sig = m[3] || '';
     let name = funcName;
     if (decArgs) {
-      const explicit = kwString(decArgs, 'name') || firstStringLiteral(decArgs);
+      // Only a POSITIONAL first string literal renames the tool. The old code
+      // took the first string literal ANYWHERE in the decorator args, so
+      // `@tool(description="Send X")` wrongly used the DESCRIPTION as the name.
+      const explicit = kwString(decArgs, 'name') || positionalFirstString(decArgs);
       if (explicit) name = explicit;
     }
-    push(name, '', pyParams(sig), m.index);
+    // Description: an explicit `description=` kwarg, else the function's docstring
+    // (the standard place a @tool documents what it actually does).
+    const description = kwString(decArgs, 'description') || pyDocstring(content, m.index + m[0].length);
+    push(name, description, pyParams(sig), m.index);
+  }
+}
+
+// Vercel AI SDK / Genkit / Mastra object-first tool factories, where the tool
+// NAME lives in the binding or object key rather than a `name:` field:
+//   const tradingPush = tool({ description, inputSchema: z.object(...), execute })
+//   tradingPush: tool({ ... })
+//   createTool({...}) / defineTool({...}) / ai.defineTool({...})
+function jsToolConstructors(content, push) {
+  const re = /(?:\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*|\b([A-Za-z_$][\w$]*)\s*:\s*)?(?:[\w$]+\.)?\b(?:tool|createTool|defineTool|makeTool)\s*\(\s*\{/g;
+  let m;
+  while ((m = re.exec(content))) {
+    const bindName = m[1] || m[2] || '';
+    const braceIndex = m.index + m[0].length - 1; // the '{' of the first argument
+    const objText = balancedSlice(content, braceIndex, '{', '}');
+    if (!objText) continue;
+    // Same guard discipline as objectLiteralTools: a real tool config carries a
+    // description AND a schema/executor — not just any object handed to a tool().
+    if (!/\bdescription\s*[:=]/.test(objText)) continue;
+    if (!/\b(parameters|inputSchema|input_schema|schema|execute)\s*[:=]/.test(objText)) continue;
+    const name = kwString(objText, 'name') || kwString(objText, 'id') || bindName;
+    if (!name) continue;
+    const description = kwString(objText, 'description') || '';
+    push(name, description, schemaKeys(objText), m.index, braceIndex + objText.length);
   }
 }
 
@@ -326,7 +393,21 @@ function mcpRegistrations(content, push) {
     const args = splitTopLevel(argsStr.slice(1, -1));
     const first = (args[0] || '').trim();
     const nameLit = /^(['"`])([^'"`]+)\1$/.exec(first);
-    if (!nameLit) continue; // not a string-named registration (e.g. @tool def form)
+    if (!nameLit) {
+      // Pattern C: tool(fn, { name, description, ... }) — the LangChain-JS / MCP
+      // shape where arg 0 is the handler and the name lives in a later object arg.
+      for (let k = 1; k < args.length; k++) {
+        const a = args[k].trim();
+        if (!a.startsWith('{')) continue;
+        const cName = kwString(a, 'name');
+        const cDesc = kwString(a, 'description');
+        if (cName && cDesc) {
+          push(cName, cDesc, schemaKeys(a), m.index);
+          break;
+        }
+      }
+      continue; // no string-named registration (e.g. @tool def form)
+    }
     const name = nameLit[2];
 
     let description = '';
@@ -354,18 +435,29 @@ function mcpRegistrations(content, push) {
 }
 
 // Function-calling tool object literals: { name: "x", description: "...", parameters: {...} }
-function objectLiteralTools(content, push) {
+function objectLiteralTools(content, push, ext = '') {
+  const jsxLike = ext === '.tsx' || ext === '.jsx';
+  // Require a FUNCTION-shaped sibling: a parameter schema or a callable handler.
+  // `description` alone is far too weak — React form fields, app metadata
+  // (name+description+category), and settings schemas all carry a name and a
+  // description without being agent tools. In JSX/TSX the weaker handler words
+  // (func/handler/call/run/bare schema) are satisfied by form-field props and Zod
+  // form schemas, so there we demand a REAL tool-schema sibling only.
+  const siblingRe = jsxLike
+    ? /\b(parameters|inputSchema|input_schema|args_schema|execute)\b/
+    : /\b(parameters|inputSchema|input_schema|args_schema|schema|func|function|handler|execute|invoke|run_tool|_run|call)\b/;
   const re = /\bname\s*[:=]\s*(['"`])([^'"`]+)\1/g;
   let m;
   while ((m = re.exec(content))) {
     const obj = enclosingObject(content, m.index);
     if (!obj) continue;
-    // Require a FUNCTION-shaped sibling: a parameter schema or a callable
-    // handler. `description` alone is far too weak — React form fields, app
-    // metadata (name+description+category), and settings schemas all carry a
-    // name and a description without being agent tools. This is the dominant
-    // false-positive source in application repos.
-    if (!/\b(parameters|inputSchema|input_schema|args_schema|schema|func|function|handler|execute|invoke|run_tool|_run|call)\b/.test(obj.text)) continue;
+    // Solidity ABI entries ({ type:'function', name, inputs, outputs,
+    // stateMutability }) pass the sibling check via the "function" value string,
+    // but they are contract metadata, not agent tools. Reject them explicitly —
+    // this is what produced 41 CATASTROPHIC false positives on an ABI constants file.
+    if (/\b(stateMutability|internalType)\b/.test(obj.text)) continue;
+    if (/\binputs\b\s*[:=]/.test(obj.text) && /\boutputs\b\s*[:=]/.test(obj.text)) continue;
+    if (!siblingRe.test(obj.text)) continue;
     const name = m[2];
     const description = kwString(obj.text, 'description') || '';
     push(name, description, schemaKeys(obj.text), obj.start);
@@ -388,6 +480,25 @@ function kwString(text, key) {
 function firstStringLiteral(text) {
   const m = /(['"`])([^'"`]+)\1/.exec(text);
   return m ? m[2] : null;
+}
+
+// The first POSITIONAL string literal of a `(...)` argument list — i.e. one that
+// sits immediately after the open paren, not the value of a kwarg. This is how
+// `@tool("my_name", ...)` names a tool while `@tool(description="...")` does not.
+function positionalFirstString(decArgs) {
+  const m = /^\(\s*(['"`])((?:\\.|(?!\1)[\s\S])*?)\1\s*(?:,|\))/.exec(String(decArgs));
+  return m ? m[2] : null;
+}
+
+// A Python docstring immediately following a def signature. `fromIndex` points
+// just past the signature's closing `)`. Returns the first paragraph, whitespace-
+// collapsed and length-bounded, or '' when there is no docstring.
+function pyDocstring(content, fromIndex) {
+  const tail = content.slice(fromIndex, fromIndex + 4000);
+  const m = /^\s*(?:->[^\n:]+?)?:\s*\r?\n\s*[rubf]{0,2}("""|''')([\s\S]*?)\1/.exec(tail);
+  if (!m) return '';
+  const para = m[2].trim().split(/\r?\n\s*\r?\n/)[0].replace(/\s+/g, ' ').trim();
+  return para.slice(0, 500);
 }
 
 // Parse a Python parameter signature into identifier names.
