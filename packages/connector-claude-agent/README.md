@@ -1,10 +1,21 @@
-# @makerchecker/connector-claude-agent
+<div align="center">
 
-Governs a [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) custom tool with MakerChecker. `governClaudeTool` returns an `SdkMcpToolDefinition` with the same name, description, and input schema, wrapped in a deny-by-default check before the handler and a hash-chained, Ed25519-signed record after it.
+# 🔗 @makerchecker/connector-claude-agent
+
+### Put a governance gate in front of every Claude Agent SDK tool call.
+
+Wrap a [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) custom tool and every invocation runs a deny-by-default check before the handler, then records an Ed25519-signed, hash-chained entry after it. Same name, description, and schema — it drops straight into your SDK MCP server.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/connector-claude-agent?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/connector-claude-agent)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+
+</div>
+
+`governClaudeTool` returns an `SdkMcpToolDefinition` with the original name, description, and input schema, so it drops into `createSdkMcpServer` in place of the raw tool.
 
 ## Install
 
-`@anthropic-ai/claude-agent-sdk` (`^0.3.0`) is a peer dependency.
+`@anthropic-ai/claude-agent-sdk` (`^0.3.195`) is a peer dependency.
 
 ```bash
 pnpm add @makerchecker/connector-claude-agent @anthropic-ai/claude-agent-sdk zod

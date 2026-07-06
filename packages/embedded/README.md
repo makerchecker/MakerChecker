@@ -1,11 +1,32 @@
-# @makerchecker/embedded
+<div align="center">
 
-In-process MakerChecker governance. **Import the primitives and use them
-standalone** — deny-by-default authorization and separation of duties — with no
-server, no Postgres, and no audit chain. Add the signed, offline-verifiable
-chain only when you want it.
+# 🔒 @makerchecker/embedded
 
-The package is three composable tiers. Take only the layer you need:
+### Governance primitives that run inside your agent — deny-by-default authorization and a signed audit trail, with no server and no database.
+
+`@makerchecker/embedded` is the importable enforcement layer for AI agents: a pure deny-by-default decision, a stateful governor that wraps your tools, and an optional Ed25519-signed, offline-verifiable audit chain. Import only the tier you need. This is what `mc scan --fix` scaffolds to.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/embedded?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/embedded)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+
+</div>
+
+> [!TIP]
+> **The one-liner** — a governor with the signed chain already attached, deny-by-default from the first call:
+> ```js
+> import { createGovernor } from "@makerchecker/embedded";
+>
+> const gov = createGovernor();
+> gov.defineSkill("execute-payment@1", { riskTier: "high" })
+>    .defineRole("ap-bot")
+>    .defineAgent("agent-1", "ap-bot");   // NOT granted execute-payment
+>
+> const pay = gov.wrap("agent-1", "execute-payment@1", async (i) => rail.wire(i));
+> await pay({ amountUsd: 1_000_000 });     // throws GovernanceDeniedError — executor never runs
+> ```
+
+In-process MakerChecker governance in three composable tiers — take only the layer you need:
 
 | Import | You get | Pulls in |
 | --- | --- | --- |

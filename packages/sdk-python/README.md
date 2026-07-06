@@ -1,8 +1,18 @@
-# makerchecker (Python SDK)
+<div align="center">
+
+# 🐍 makerchecker (Python SDK)
+
+### Governance your Python agent can't skip — one wrapper around every tool call.
 
 A typed HTTP client for a running MakerChecker server, plus the `governed_tool` wrapper. It opens a proxy session and routes a Python agent's tool calls through the server's deny-by-default grants, segregation of duties, approval gates, and a hash-chained, Ed25519-signed audit. The API mirrors the TypeScript SDK at [../sdk](../sdk).
 
-## Install
+[![PyPI](https://img.shields.io/pypi/v/makerchecker?color=3776ab&logo=pypi&logoColor=white)](https://pypi.org/project/makerchecker/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+
+</div>
+
+## 📦 Install
 
 ```bash
 pip install "makerchecker @ git+https://github.com/sammysltd/makerchecker#subdirectory=packages/sdk-python"
@@ -10,7 +20,7 @@ pip install "makerchecker @ git+https://github.com/sammysltd/makerchecker#subdir
 
 Plain `pip install makerchecker` from PyPI works from the next tagged release. Python 3.10+. Runtime dependency: `httpx`.
 
-## Use
+## 🚀 Use
 
 ```python
 from makerchecker import create_client, governed_tool, GovernanceDeniedError
@@ -33,7 +43,7 @@ client.proxy.close_session(session["id"])
 
 `governed_tool` calls `client.proxy.check`, raises `GovernanceDeniedError(code, reason)` on a deny before `fn` runs, then runs `fn(input)`, records the output, and returns it. If `fn` raises, it records `{"message": str(err)}` and re-raises. `skill_ref` is a `name@version` string; a grant for one version does not authorize another.
 
-## API
+## 📖 API
 
 ```python
 create_client(base_url, api_key=None) -> Client
@@ -57,6 +67,6 @@ governed_tool(client, session_id, agent_name, skill_ref, fn) -> Callable[[dict],
 
 CrewAI and LangChain tools are callables: wrap the implementation with `governed_tool` and call it from the `@tool` body.
 
-## License
+## 📄 License
 
 Apache-2.0. See [LICENSE](./LICENSE). The MakerChecker server it talks to is AGPL-3.0.

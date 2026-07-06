@@ -1,10 +1,22 @@
-# @makerchecker/proof-verifier
+<div align="center">
 
-A standalone, **zero-dependency, zero-trust** verifier for MakerChecker audit
-bundles. It re-implements verification from the public
-[audit specification](../../docs/audit-spec.md) alone — it does **not** import
-the server, touch a database, or make a network call. Hand it a signed bundle
-and it tells you, offline, whether the chain is intact and who signed it.
+# ✅ @makerchecker/proof-verifier
+
+### Prove a MakerChecker audit bundle is intact and who signed it — offline, trusting nothing but the bytes.
+
+`@makerchecker/proof-verifier` re-implements verification from the public [audit specification](../../docs/audit-spec.md) alone — it does **not** import the server, touch a database, or make a network call. Hand it a signed bundle and it tells you whether the hash chain is intact and who signed it. Zero dependencies, fully offline.
+
+[![npm](https://img.shields.io/npm/v/@makerchecker/proof-verifier?color=cb3837&logo=npm)](https://www.npmjs.com/package/@makerchecker/proof-verifier)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational)](../../LICENSING.md)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+
+</div>
+
+> [!TIP]
+> **Verify a bundle now** — no install, no server, nothing leaves your machine:
+> ```bash
+> npx @makerchecker/proof-verifier verify bundle.json
+> ```
 
 > An auditor trusts this verifier *because* it is not the vendor's server. The
 > code is Apache-2.0 and reproducible; the trust is in the independence.
@@ -24,7 +36,7 @@ npx @makerchecker/proof-verifier verify bundle.json
 # pin the instance public key (obtained out of band) so a re-signed bundle is rejected:
 npx @makerchecker/proof-verifier verify bundle.json --key instance-pubkey.pem
 # pipe it, or get machine-readable output:
-cat bundle.json | agent-proof verify - --json
+cat bundle.json | npx @makerchecker/proof-verifier verify - --json
 ```
 
 Exit code `0` = verified, `1` = failed, `2` = usage error.
