@@ -7,10 +7,10 @@
   "homepage": "https://makerchecker.ai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sammysltd/makerchecker.git",
+    "url": "git+https://github.com/makerchecker/MakerChecker.git",
     "directory": "packages/web"
   },
-  "bugs": "https://github.com/sammysltd/makerchecker/issues",
+  "bugs": "https://github.com/makerchecker/MakerChecker/issues",
   "private": true,
   "type": "module",
   "scripts": {

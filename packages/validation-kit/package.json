@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sammysltd/makerchecker",
+    "url": "https://github.com/makerchecker/MakerChecker",
     "directory": "packages/validation-kit"
   },
   "description": "Generate a Computer System Validation (IQ/OQ/PQ) report and Requirements Traceability Matrix deterministically from a signed MakerChecker audit bundle. The GxP validation package a regulated QA function drops into its binder.",
