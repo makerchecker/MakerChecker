@@ -8,10 +8,15 @@ server holds all the governance and audit logic.
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
+
 from ._client import ApiError, CheckResult, Client, create_client
 from ._governance import GovernanceDeniedError, governed_tool
 
-__version__ = "1.0.0"
+try:
+    __version__ = version("makerchecker")
+except PackageNotFoundError:  # running from a source checkout, not an install
+    __version__ = "0.0.0"
 
 __all__ = [
     "ApiError",
