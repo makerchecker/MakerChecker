@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -50,7 +50,7 @@ jobs:
           # latest commit is fetched and a secret in an earlier commit slips by.
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # SCA (Layer 2): fail the build on any high/critical advisory in the
