@@ -36,7 +36,7 @@
     "@vitest/coverage-v8": "^3.2.7",
     "autoprefixer": "^10.5.2",
     "happy-dom": "^20.10.6",
-    "postcss": "^8.5.16",
+    "postcss": "^8.5.23",
     "tailwindcss": "^3",
     "typescript": "^5.7.3",
     "vite": "^6.0.11",
