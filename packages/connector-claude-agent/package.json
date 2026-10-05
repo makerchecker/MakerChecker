@@ -32,14 +32,14 @@
     "@makerchecker/sdk": "workspace:*"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.201"
+    "@anthropic-ai/claude-agent-sdk": "^0.3.287"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.201",
-    "@types/node": "^22.20.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.287",
+    "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^3.2.7",
     "typescript": "^5.7.3",
     "vitest": "^3.2.7",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   }
 }
